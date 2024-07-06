@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 from itertools import product
 from tqdm.notebook import tqdm
 import cmath
-from qutip.qip.operations import iswap
+from qutip_qip.operations import iswap
 from scipy.optimize import curve_fit
 
 
@@ -24,8 +24,8 @@ class Module_build():
 
         w1_un = 4
         w2_un = 6
-        w3_un = 4.0000000000000000000000000000000000000000000000000000000000000000000001
-        w4_un = 5.9999999999999999999999999999999999999999999999999999999999999999999999
+        w3_un = 4.0000000001
+        w4_un = 5.9999999999
         ws_un = 6 - (1 / 3) * (1 / 2)
 
 
@@ -226,7 +226,7 @@ class Module_build():
         # build the designed unitary
         # run the fidelity analysis over the expected gate 
         amps = np.linspace(0,8,100)
-        results = []
+        result = []
         fids = []
 
         for i in amps:
@@ -241,7 +241,7 @@ class Module_build():
 
             # calculate the fidelity
             fid = np.abs(qt.average_gate_fidelity(desired_U, U_propagator))
-            results.append([i,fid])
+            result.append([i, fid])
             fids.append(fid)
 
         self.a = max(fids)
