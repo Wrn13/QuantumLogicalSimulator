@@ -70,37 +70,45 @@ def gate( dim, N):
     return cnots, correction_z, hada_layer, x_layer, vectors
 
 
-def state(alpha, beta, dim, hada_layer, cnots, state_choice):
-    # creating initial state
-    # state controls 
-    cnot1 = cnots[0]
-    cnot2 = cnots[1]
-    if state_choice == "220":
-        # state
-        psi0 = tensor((alpha * basis(dim, 0) + beta * basis(dim, 2)).unit(), tensor([basis(dim, 0)] * (N-1)))
-        rho0 = psi0 * psi0.dag()
-        encoded_rho = rho_encoded = hada_layer * cnot1 * rho0 * cnot1.dag() * hada_layer.dag()
-        ref_state = hada_layer * cnot2 * cnot1 * rho0 * cnot1.dag() * cnot2.dag() * hada_layer.dag()
-        rho_encoded_traced = qt.ptrace(rho_encoded, [0,1,2])
+def state(qubit_choice, N, alpha, beta, qubit_ref, dim):
+    states_ = [(basis(dim, 0) + basis(dim, 2)).unit(), basis(dim, 1), (basis(dim, 0) - basis(dim, 2)).unit()]
+    qubit_state = [qt.basis(dim) for _ in range(N)]
+    qubit_state1 = [qt.basis(dim) for _ in range(N)]
 
-    elif state_choice == "202":
-        # state
-        psi0 = tensor((alpha * basis(dim, 0) + beta * basis(dim, 2)).unit(), tensor([basis(dim, 0)] * (N-1)))
-        rho0 = psi0 * psi0.dag()
-        encoded_rho = rho_encoded = hada_layer * cnot2 * rho0 * cnot2.dag() * hada_layer.dag()
-        ref_state = hada_layer * cnot2 * cnot1 * rho0 * cnot1.dag() * cnot2.dag() * hada_layer.dag()
-        rho_encoded_traced = qt.ptrace(rho_encoded, [0,1,2])
-    elif state_choice == "222":
+    qubit_choice1 = []
+    for i in range(len(qubit_choice)):
+        if qubit_choice[i] == 2:
+            qubit_choice1.append(0)
+        elif qubit_choice[i] == 0:
+            qubit_choice1.append(2)
+        else:
+            qubit_choice1.append(1)
 
-        # state
-        psi0 = tensor((alpha * basis(dim, 0) + beta * basis(dim, 2)).unit(), tensor([basis(dim, 0)] * (N-1)))
-        rho0 = psi0 * psi0.dag()
-        encoded_rho = rho_encoded = hada_layer * cnot2 * cnot1 * rho0 * cnot1.dag() * cnot2.dag() * hada_layer.dag()
-        ref_state = hada_layer * cnot2 * cnot1 * rho0 * cnot1.dag() * cnot2.dag() * hada_layer.dag()
-        rho_encoded_traced = qt.ptrace(rho_encoded, [0,1,2])
+    for i in range(len(qubit_choice)):
+        qubit_state[i] = states_[qubit_choice[i]]
+        qubit_state1[i] = states_[qubit_choice1[i]]
 
+    rho = (alpha * tensor(qubit_state) + beta * tensor(qubit_state1)).unit() * (alpha * tensor(qubit_state) + beta * tensor(qubit_state1)).dag().unit()
 
-    return rho_encoded, ref_state
+    qubit_state = [qt.basis(dim) for _ in range(N)]
+    qubit_state1 = [qt.basis(dim) for _ in range(N)]
+
+    qubit_choice1 = []
+    for i in range(len(qubit_choice)):
+        if qubit_ref[i] == 2:
+            qubit_choice1.append(0)
+        elif qubit_ref[i] == 0:
+            qubit_choice1.append(2)
+        else:
+            qubit_choice1.append(1)
+
+    for i in range(len(qubit_choice)):
+        qubit_state[i] = states_[qubit_ref[i]]
+        qubit_state1[i] = states_[qubit_choice1[i]]
+
+    ref_state = (alpha * tensor(qubit_state) + beta * tensor(qubit_state1)).unit() * (alpha * tensor(qubit_state) + beta * tensor(qubit_state1)).dag().unit()
+    
+    return rho, ref_state
 
 
 def sim_func(values):
@@ -184,8 +192,11 @@ def sim_func(values):
     projected_states = []
     measurement_duration = .005
     for i in range(len(proj)):
-        projected_state = trotter.apply(states[-1], duration=measurement_duration, unitary=[proj[i]], errors=True)
-        projected_states.append(projected_state)
+        if projection_results[i] != 0:
+            projected_state = trotter.apply(states[-1], duration=measurement_duration, unitary=[proj[i]], errors=True)
+            projected_states.append(projected_state)
+        else:
+            projected_states.append([proj[i] * states[-1] * proj[i].dag()] * int(measurement_duration / trotter_dt))
 
     def neilson_fid(rho, sigma):
         return (((rho.sqrtm()) * sigma * (rho.sqrtm())).sqrtm()).tr()
@@ -196,8 +207,11 @@ def sim_func(values):
     corrected_states = []
     recovery_duration = .025
     for i in range(len(recovery_ops)):
-        corrected_state = trotter.apply(projected_states[i][-1], duration=recovery_duration, unitary=recovery_ops[i], errors=True)
-        corrected_states.append(corrected_state)
+        if projection_results[i] != 0:
+            corrected_state = trotter.apply(projected_states[i][-1], duration=recovery_duration, unitary=recovery_ops[i], errors=True)
+            corrected_states.append(corrected_state)
+        else:
+            corrected_states.append([recovery_ops[i][0] * projected_states[i][-1] * recovery_ops[i][0].dag()] *int(recovery_duration/ trotter_dt))
 
     for i in range(len(corrected_state)):
         new_state = sum([projection_results[j] * corrected_states[j][i] for j in range(len(projection_results))])
@@ -228,49 +242,102 @@ import multiprocessing as mp
 if __name__ == "__main__":
     dim = 3
     N = 5
-    cnots, correction_z, hada_layer, x_layer, vectors = gate(dim=dim, N=N) 
-    rho_encoded, ref_state = state(alpha=0, beta=1, dim=dim, hada_layer=hada_layer, cnots=[cnots[0], cnots[1]], state_choice="202")
+    # cnots, correction_z, hada_layer, x_layer, vectors = gate(dim=dim, N=N) 
+    # rho_encoded, ref_state = state(alpha=1, beta=0, N=N, qubit_choice=[0,0,2], qubit_ref=[0,0,0])
 
-    iterations = 5
-    t1_list = np.linspace(.1, 120, iterations)
-    cnots = [cnots[2], cnots[3], cnots[4], cnots[5]]
-
-
-    values = []
-    for i in range(iterations):
-        values.append([cnots, rho_encoded, ref_state, [t1_list[i], t1_list[i]], dim, N, x_layer, correction_z, hada_layer, vectors])
-
-    # parallelization of the calculation
-    with mp.Pool() as pool:
-        results = list(pool.map(sim_func, values))
-    print("finished parallelization")
-
-    # data organization 
-    fid_pre_correction = []
-    fid_post_correction = []
-    detectable_errors = []
-    uncorrectable_errors = []
-
-    for res in results:
-        fid_pre_correction.append(res[0])
-        fid_post_correction.append(res[3])
-        detectable_errors.append(res[1])
-        uncorrectable_errors.append(res[2])
-
-    # creating a csv file to store the information 
-    import csv
+    # iterations = 5
+    # t1_list = np.linspace(.1, 120, iterations)
+    # cnots = [cnots[2], cnots[3], cnots[4], cnots[5]]
 
 
-    # Writing the arrays to a CSV file
-    with open('3_wave_cnot_serial.csv', 'w', newline='') as file:
-        writer = csv.writer(file)
-        writer.writerow(fid_pre_correction)  
-        writer.writerow(fid_post_correction)  
-        writer.writerow(detectable_errors)  
-        writer.writerow(uncorrectable_errors)  
+    # values = []
+    # for i in range(iterations):
+    #     values.append([cnots, rho_encoded, ref_state, [t1_list[i], t1_list[i]], dim, N, x_layer, correction_z, hada_layer, vectors])
 
-    print(f"File created: 3_wave_cnot_serial.csv")
+    # # parallelization of the calculation
+    # with mp.Pool() as pool:
+    #     results = list(pool.map(sim_func, values))
+    # print("finished parallelization")
 
+    # # data organization 
+    # fid_pre_correction = []
+    # fid_post_correction = []
+    # detectable_errors = []
+    # uncorrectable_errors = []
+
+    # for res in results:
+    #     fid_pre_correction.append(res[0])
+    #     fid_post_correction.append(res[3])
+    #     detectable_errors.append(res[1])
+    #     uncorrectable_errors.append(res[2])
+
+    # # creating a csv file to store the information 
+    # import csv
+
+
+    # # Writing the arrays to a CSV file
+    # with open('3_wave_cnot_serial.csv', 'w', newline='') as file:
+    #     writer = csv.writer(file)
+    #     writer.writerow(fid_pre_correction)  
+    #     writer.writerow(fid_post_correction)  
+    #     writer.writerow(detectable_errors)  
+    #     writer.writerow(uncorrectable_errors)  
+
+    # print(f"File created: 3_wave_cnot_serial.csv")
+
+    # need to average over all of the possible error states for a specific error
+    choices = [[1, 0, [2,2,0], [2,2,2]], [1, 0, [0,0,2], [0,0,0]], [1, 1, [2,2,0], [2,2,2]], 
+               [1, -1, [2,2,0], [2,2,2]], [1, 1j, [2,2,0], [2,2,2]], [1, -1j, [2,2,0], [2,2,2]]]
+    file_names = ["3_wave_cnot_serial_state.csv", "3_wave_cnot_serial_state_dag.csv", "3_wave_cnot_serial_+_super.csv", 
+                  "3_wave_cnot_serial_-_super.csv", "3_wave_cnot_serial_im_+_super.csv", "3_wave_cnot_serial_im_-_super.csv"]
+    for choice in choices:
+        cnots, correction_z, hada_layer, x_layer, vectors = gate(dim=dim, N=N) 
+        rho_encoded, ref_state = state(alpha=choice[0], beta=choice[1], N=N, qubit_choice=choice[2], qubit_ref=choice[3], dim=dim)
+
+        iterations = 5
+        t1_list = np.linspace(.1, 120, iterations)
+        cnots = [cnots[2], cnots[3], cnots[4], cnots[5]]
+
+
+        values = []
+        for i in range(iterations):
+            values.append([cnots, rho_encoded, ref_state, [t1_list[i], t1_list[i]], dim, N, x_layer, correction_z, hada_layer, vectors])
+
+        # parallelization of the calculation
+        with mp.Pool() as pool:
+            results = list(pool.map(sim_func, values))
+        print("finished parallelization")
+
+        # data organization 
+        fid_pre_correction = []
+        fid_post_correction = []
+        detectable_errors = []
+        uncorrectable_errors = []
+
+        for res in results:
+            fid_pre_correction.append(res[0])
+            fid_post_correction.append(res[3])
+            detectable_errors.append(res[1])
+            uncorrectable_errors.append(res[2])
+
+        # creating a csv file to store the information 
+        import csv
+        import os 
+        
+        folder_path = r'C:\Users\girgi\Desktop\Github\quantum_logical\src\notebooks\logical_errors\characterization_sims\csv_files'
+        file_path = os.path.join(folder_path, file_names[choices.index(choice)])
+        os.chdir(folder_path)
+        print(f"Current working directory: {os.getcwd()}")
+
+        # Writing the arrays to a CSV file
+        with open(file_names[choices.index(choice)], 'w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow(fid_pre_correction)  
+            writer.writerow(fid_post_correction)  
+            writer.writerow(detectable_errors)  
+            writer.writerow(uncorrectable_errors)  
+
+        print(file_names[choices.index(choice)])
 
 
 
