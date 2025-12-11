@@ -7,7 +7,7 @@ name = "quantum_logical"
 description = "logical state encodings for error-detection/correction of quantum states"
 version = "0.1.0"
 authors = [{ name = "Evan McKinney" }]
-requires-python = ">=3.9"
+requires-python = ">=3.11, <3.13"
 dependencies = [
     "tqdm",
     "numpy",
@@ -18,7 +18,7 @@ dependencies = [
     "matplotlib",
     "LovelyPlots",
     "rustworkx",
-
+    "qutip-qip>=0.4.1",
 ]
 
 [project.optional-dependencies]
