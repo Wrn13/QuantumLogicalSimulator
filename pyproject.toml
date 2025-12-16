@@ -19,6 +19,7 @@ dependencies = [
     "LovelyPlots",
     "rustworkx",
     "qutip-qip>=0.4.1",
+    "ipykernel>=7.1.0",
 ]
 
 [project.optional-dependencies]
@@ -35,15 +36,20 @@ format = [
 test = ["pytest"]
 
 [tool.ruff]
-target-version = "py39"
+target-version = "py311"
 line-length = 88
 fix = true
 
-[tool.black]
-line-length = 88
+[tool.ruff.lint]
+# 2. Merge isort by adding "I" (Isort) to your selected rules
+# You likely have others here (like "E", "F"), just add "I" to the list.
+select = ["E4", "E7", "E9", "F", "I"]
 
-[tool.isort]
-profile = "black"
+[tool.ruff.format]
+# Ruff's formatter is designed to be a drop-in replacement for Black
+# So no extra config is needed here to match Black's style.
+quote-style = "double"
+indent-style = "space"
 
 
 [[tool.setuptools-rust.ext-modules]]

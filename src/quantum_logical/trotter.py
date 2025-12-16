@@ -66,6 +66,7 @@ class TrotterGroup:
             )
 
         num_steps = int(duration / self.trotter_dt)
+        
         if num_steps == 0:
             if discrete_unitary is not None:
                 return Qobj(discrete_unitary @ state_numpy @ discrete_unitary.T.conj())
@@ -74,7 +75,7 @@ class TrotterGroup:
         fractional_unitary = None
         if discrete_unitary is not None:
             fractional_unitary = fractional_matrix_power(
-                discrete_unitary, 1 / num_steps
+                discrete_unitary, 1 / float(num_steps)
             )
         states = []
         for _ in range(num_steps):

@@ -1030,6 +1030,7 @@ name = "quantum-logical"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "ipykernel" },
     { name = "lovelyplots" },
     { name = "matplotlib" },
     { name = "numpy" },
@@ -1067,6 +1068,7 @@ test = [
 requires-dist = [
     { name = "black", extras = ["jupyter"], marker = "extra == 'format'" },
     { name = "docformatter", extras = ["tomli"], marker = "extra == 'format'" },
+    { name = "ipykernel", specifier = ">=7.1.0" },
     { name = "ipykernel", marker = "extra == 'dev'" },
     { name = "ipywidgets", marker = "extra == 'dev'" },
     { name = "isort", marker = "extra == 'format'" },
