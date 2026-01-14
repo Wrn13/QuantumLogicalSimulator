@@ -328,12 +328,12 @@ class ExperimentRunner:
 
         #Recovery operations
         r000 = r111 = [qt.tensor(*([qt.qeye(3)] * 6))]
-        r001 = [hadamard_layer, qt.tensor(qt.qeye(3), qt.qeye(3), x_gate, qt.qeye(3), qt.qeye(3), qt.qeye(3)), cnot4, hadamard_layer]
-        r010 = [hadamard_layer, qt.tensor(qt.qeye(3), x_gate, qt.qeye(3), qt.qeye(3), qt.qeye(3), qt.qeye(3)), cnot5, hadamard_layer]
-        r011 = [hadamard_layer, qt.tensor(qt.qeye(3), x_gate, qt.qeye(3), qt.qeye(3), qt.qeye(3), qt.qeye(3)), qt.tensor(qt.qeye(3), qt.qeye(3), x_gate, qt.qeye(3), qt.qeye(3), qt.qeye(3)), cnot5, cnot4, hadamard_layer]
-        r100 = [hadamard_layer, qt.tensor(x_gate, qt.qeye(3), qt.qeye(3), qt.qeye(3), qt.qeye(3), qt.qeye(3)), cnot6, hadamard_layer]
-        r101 = [hadamard_layer, qt.tensor(x_gate, qt.qeye(3), qt.qeye(3), qt.qeye(3), qt.qeye(3), qt.qeye(3)), qt.tensor(qt.qeye(3), qt.qeye(3), x_gate, qt.qeye(3), qt.qeye(3), qt.qeye(3)), cnot6, cnot7, hadamard_layer]
-        r110 = [hadamard_layer, qt.tensor(x_gate, qt.qeye(3), qt.qeye(3), qt.qeye(3), qt.qeye(3), qt.qeye(3)), qt.tensor(qt.qeye(3), x_gate, qt.qeye(3), qt.qeye(3), qt.qeye(3), qt.qeye(3)), cnot8, cnot9, hadamard_layer]
+        r001 = [qt.tensor(qt.qeye(3), qt.qeye(3), x_gate, qt.qeye(3), qt.qeye(3), qt.qeye(3)), cnot4]
+        r010 = [qt.tensor(qt.qeye(3), x_gate, qt.qeye(3), qt.qeye(3), qt.qeye(3), qt.qeye(3)), cnot5]
+        r011 = [qt.tensor(qt.qeye(3), x_gate, qt.qeye(3), qt.qeye(3), qt.qeye(3), qt.qeye(3)), qt.tensor(qt.qeye(3), qt.qeye(3), x_gate, qt.qeye(3), qt.qeye(3), qt.qeye(3)), cnot5, cnot4]
+        r100 = [qt.tensor(x_gate, qt.qeye(3), qt.qeye(3), qt.qeye(3), qt.qeye(3), qt.qeye(3)), cnot6]
+        r101 = [qt.tensor(x_gate, qt.qeye(3), qt.qeye(3), qt.qeye(3), qt.qeye(3), qt.qeye(3)), qt.tensor(qt.qeye(3), qt.qeye(3), x_gate, qt.qeye(3), qt.qeye(3), qt.qeye(3)), cnot6, cnot7]
+        r110 = [qt.tensor(x_gate, qt.qeye(3), qt.qeye(3), qt.qeye(3), qt.qeye(3), qt.qeye(3)), qt.tensor(qt.qeye(3), x_gate, qt.qeye(3), qt.qeye(3), qt.qeye(3), qt.qeye(3)), cnot8, cnot9]
         recovery_ops = [r000, r001, r010, r011, r100, r101, r110, r111]
         recovery_times = [
             [0.0],
