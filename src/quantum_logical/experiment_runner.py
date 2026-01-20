@@ -205,6 +205,9 @@ class ExperimentRunner:
         Returns:
             A list of `qutip.Qobj` states produced at each step of the full experiment.
         """
+        num_qudits = len(initial_state.dims[0])
+
+        print("Num qudits:", num_qudits)
         # start state list
         state_list = [initial_state]
 
@@ -223,7 +226,7 @@ class ExperimentRunner:
             # apply corrections per branch
             corrected_states = []
             for i in range(len(recovery_ops)):
-                if proj_results_after_measurement[i] != 0 and i not in [0, len(recovery_ops) - 1] and sum(recovery_ops[i]) != 0.0:
+                if proj_results_after_measurement[i] != 0 and i not in [0, len(recovery_ops) - 1] and sum(recovery_times[i]) != 0.0:
                     corrected_states.append(ExperimentRunner.run_unitary_circuit(trotterer, recovery_ops[i], proj_states_after_measurement[i], recovery_times[i])[-1])
                 else:
                     state_current = proj_states_after_measurement[i]
@@ -239,56 +242,59 @@ class ExperimentRunner:
             else:
                 repetition_corrected_state = numerator / denom
 
+            # Re-initialize ancillae to |0>
+            repetition_corrected_state = qt.tensor(repetition_corrected_state.ptrace([0,1,2]), qt.tensor([qt.basis(3,0)* qt.basis(3,0).dag()] * (num_qudits - 3)))
             # apply a short identity step to let channels act
-            state_list.extend(ExperimentRunner.run_unitary_circuit(trotterer, [qt.tensor([qt.qeye(3)] * 6)], repetition_corrected_state, [5])[1:])
+            state_list.extend(ExperimentRunner.run_unitary_circuit(trotterer, [qt.tensor([qt.qeye(3)] * num_qudits)], repetition_corrected_state, [5])[1:])
 
         return state_list
 
     # Example setup circuits (moved from notebook for convenience)
     @staticmethod
-    def serial_phase_circuit(single_qudit_time: float, two_qudit_time: float):
+    def serial_phase_circuit(single_qudit_time: float, two_qudit_time: float, num_ancillae: int = 2):
         circuit = []
         gate_time = []
+        N = 3 + num_ancillae
 
         # Identity operation
-        circuit.append(qt.tensor(*[qt.qeye(3)] * 5))
+        circuit.append(qt.tensor(*[qt.qeye(3)] * (N)))
         gate_time.append(20)
 
         # Hadamard layer
-        circuit.append(qt.tensor(hadamard_operator(3), hadamard_operator(3), hadamard_operator(3), qt.qeye(3), qt.qeye(3)))
+        circuit.append(qt.tensor(hadamard_operator(3), hadamard_operator(3), hadamard_operator(3), *([qt.qeye(3)] * num_ancillae)))
         gate_time.append(single_qudit_time)
 
         # State Swap Layer
-        circuit.append(qt.tensor(state_swap(3, 2), state_swap(3, 2), state_swap(3, 2), qt.qeye(3), qt.qeye(3)))
+        circuit.append(qt.tensor(state_swap(3, 2), state_swap(3, 2), state_swap(3, 2), *([qt.qeye(3)] * num_ancillae)))
         gate_time.append(single_qudit_time)
 
         # CNOT Layer
-        circuit.append(cnot_operator(num_qudits=5, dim=3, control_idx=0, target_idx=3, trigger=1))
-        circuit.append(cnot_operator(num_qudits=5, dim=3, control_idx=1, target_idx=3, trigger=1))
-        circuit.append(cnot_operator(num_qudits=5, dim=3, control_idx=1, target_idx=4, trigger=1))
-        circuit.append(cnot_operator(num_qudits=5, dim=3, control_idx=2, target_idx=4, trigger=1))
+        circuit.append(cnot_operator(num_qudits=N, dim=3, control_idx=0, target_idx=3, trigger=1))
+        circuit.append(cnot_operator(num_qudits=N, dim=3, control_idx=1, target_idx=3, trigger=1))
+        circuit.append(cnot_operator(num_qudits=N, dim=3, control_idx=1, target_idx=4, trigger=1))
+        circuit.append(cnot_operator(num_qudits=N, dim=3, control_idx=2, target_idx=4, trigger=1))
         gate_time.extend([two_qudit_time] * 4)
         
         # State Swap Layer
-        circuit.append(qt.tensor(state_swap(3, 2), state_swap(3, 2), state_swap(3, 2), qt.qeye(3), qt.qeye(3)))
+        circuit.append(qt.tensor(state_swap(3, 2), state_swap(3, 2), state_swap(3, 2), *([qt.qeye(3)] * num_ancillae)))
         gate_time.append(single_qudit_time)
 
         # Hadamard layer
-        circuit.append(qt.tensor(hadamard_operator(3), hadamard_operator(3), hadamard_operator(3), qt.qeye(3), qt.qeye(3)))
+        circuit.append(qt.tensor(hadamard_operator(3), hadamard_operator(3), hadamard_operator(3), *([qt.qeye(3)] * num_ancillae)))
         gate_time.append(single_qudit_time)
 
         # Measurement operators
         phase_measurements = [
-            qt.tensor(*[qt.qeye(3)] * 3, (qt.tensor(qt.basis(3, i), qt.basis(3, j)) * (qt.tensor(qt.basis(3, i), qt.basis(3, j))).dag()))
+            qt.tensor(*[qt.qeye(3)] * 3, (qt.tensor(qt.basis(3, i), qt.basis(3, j)) * (qt.tensor(qt.basis(3, i), qt.basis(3, j))).dag()), *[qt.qeye(3)] * (num_ancillae-2))
             for i in range(3) for j in range(3)
         ]
 
         # Recovery operations
         z_gate = qt.Qobj([[1, 0, 0], [0, 1, 0], [0, 0, -1]])
-        r00 = r02 = r20 = r22 = r12 = r21 = [qt.tensor([qt.qeye(3)] * 5)]
-        r01 = [qt.tensor(qt.qeye(3), qt.qeye(3), z_gate, qt.tensor([qt.qeye(3)] * 2))]
-        r10 = [qt.tensor(z_gate, qt.tensor([qt.qeye(3)] * 4))]
-        r11 = [qt.tensor(qt.qeye(3), z_gate, qt.qeye(3), qt.tensor([qt.qeye(3)] * 2))]
+        r00 = r02 = r20 = r22 = r12 = r21 = [qt.tensor([qt.qeye(3)] * N)]
+        r01 = [qt.tensor(qt.qeye(3), qt.qeye(3), z_gate, qt.tensor(*[qt.qeye(3)] * num_ancillae))]
+        r10 = [qt.tensor(z_gate, qt.tensor(*[qt.qeye(3)] * (N-1)))]
+        r11 = [qt.tensor(qt.qeye(3), z_gate, qt.qeye(3), qt.tensor(*[qt.qeye(3)] * num_ancillae))]
         recovery_ops = [r00, r01, r02, r10, r11, r12, r20, r21, r22]
         recovery_times = [[0], [single_qudit_time], [0], [single_qudit_time], [single_qudit_time], [0], [0], [0], [0]]
         return circuit, gate_time, phase_measurements, recovery_ops, recovery_times
@@ -309,7 +315,6 @@ class ExperimentRunner:
         cnot7 = cnot_operator(num_qudits=6, dim=3, control_idx=1, target_idx=2, trigger=2)
         cnot8 = cnot_operator(num_qudits=6, dim=3, control_idx=2, target_idx=0, trigger=2)
         cnot9 = cnot_operator(num_qudits=6, dim=3, control_idx=2, target_idx=1, trigger=2)
-        hadamard_layer = qt.tensor(hadamard_operator(3), hadamard_operator(3), hadamard_operator(3), qt.qeye(3), qt.qeye(3), qt.qeye(3))
         x_gate = qt.Qobj(np.array([[0, 1, 0], [1, 0, 0], [0, 0, 1]]))
 
         # Identity operation for 5 time units
