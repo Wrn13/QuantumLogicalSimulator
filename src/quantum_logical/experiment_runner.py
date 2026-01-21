@@ -211,6 +211,8 @@ class ExperimentRunner:
         # start state list
         state_list = [initial_state]
 
+        state_list.extend(ExperimentRunner.run_unitary_circuit(trotterer, [qt.tensor([qt.qeye(3)] * num_qudits)], state_list[-1], [20]))
+
         for setup in setup_circuits:
             circuits, gate_times, measurements, recovery_ops, recovery_times = setup
 
@@ -256,10 +258,6 @@ class ExperimentRunner:
         gate_time = []
         N = 3 + num_ancillae
 
-        # Identity operation
-        circuit.append(qt.tensor(*[qt.qeye(3)] * (N)))
-        gate_time.append(20)
-
         # Hadamard layer
         circuit.append(qt.tensor(hadamard_operator(3), hadamard_operator(3), hadamard_operator(3), *([qt.qeye(3)] * num_ancillae)))
         gate_time.append(single_qudit_time)
@@ -304,10 +302,6 @@ class ExperimentRunner:
         circuit = []
         gate_time = []
         N = 3 + num_ancillae
-
-        # Identity operation
-        circuit.append(qt.tensor(*[qt.qeye(3)] * (N)))
-        gate_time.append(20)
 
         # Hadamard layer
         circuit.append(qt.tensor(hadamard_operator(3), hadamard_operator(3), hadamard_operator(3), *([qt.qeye(3)] * num_ancillae)))
@@ -366,10 +360,6 @@ class ExperimentRunner:
         cnot9 = cnot_operator(num_qudits=6, dim=3, control_idx=2, target_idx=1, trigger=2)
         x_gate = qt.Qobj(np.array([[0, 1, 0], [1, 0, 0], [0, 0, 1]]))
 
-        # Identity operation for 5 time units
-        circuit.append(qt.tensor(*[qt.qeye(3)] * 6))
-        gate_time.append(5)
-
         
         # CNOT Layer
         circuit.append(cnot1)
@@ -418,10 +408,6 @@ class ExperimentRunner:
         cnot8 = cnot_operator(num_qudits=6, dim=3, control_idx=2, target_idx=0, trigger=2)
         cnot9 = cnot_operator(num_qudits=6, dim=3, control_idx=2, target_idx=1, trigger=2)
         x_gate = qt.Qobj(np.array([[0, 1, 0], [1, 0, 0], [0, 0, 1]]))
-
-        # Identity operation for 5 time units
-        circuit.append(qt.tensor(*[qt.qeye(3)] * 6))
-        gate_time.append(5)
 
         
         # CNOT Layer
