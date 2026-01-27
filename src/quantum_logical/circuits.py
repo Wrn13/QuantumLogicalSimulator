@@ -1,10 +1,9 @@
 import numpy as np
+from quantum_logical.gates import hadamard_operator, state_swap
 import qutip as qt
 
-from quantum_logical.experiment_runner import (
+from quantum_logical.gates import (
     cnot_operator,
-    hadamard_operator,
-    state_swap,
 )
 
 
