@@ -20,6 +20,7 @@ dependencies = [
     "rustworkx",
     "qutip-qip>=0.4.1",
     "ipykernel>=7.1.0",
+    "cirq>=1.6.1",
 ]
 
 [project.optional-dependencies]

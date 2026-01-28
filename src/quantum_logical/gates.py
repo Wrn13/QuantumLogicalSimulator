@@ -1,6 +1,59 @@
 import numpy as np
 import qutip as qt
 
+def iSwap_operator(dim: int, level:int) -> qt.Qobj:
+    """Return a logical iSWAP operator for the given dimension and swap level.
+
+    Supports `dim==2` (standard iSWAP) and `dim==3` (qutrit analogue used in the
+    notebook). 
+    For `dim==3`, the `level` argument specifies which pair of levels to swap:
+      - level=1: swap |0> and |1>
+      - level=2: swap |1> and |2>
+    The returned object is a `qutip.Qobj` usable in tensor constructions.
+
+    Args:
+        dim: The Hilbert-space dimension (2 or 3).
+        level: The level of the swap (1 or 2).
+
+    Returns:
+        A `qutip.Qobj` representing the iSWAP-like gate.
+
+    Raises:
+        ValueError: if `dim` is not 2 or 3.
+    """
+    if dim == 2:
+        return qt.Qobj([[1, 0, 0, 0],
+                        [0, 0, 1j, 0],
+                        [0, 1j, 0, 0],
+                        [0, 0, 0, 1]])
+    if dim == 3:
+        if level == 1:
+            # Swap |01> and |10>
+            return qt.Qobj([
+                [1, 0, 0, 0, 0, 0, 0, 0, 0],
+                [0, 0, 0, 1j, 0, 0, 0, 0, 0],
+                [0, 0, 1, 0, 0, 0, 0, 0, 0],
+                [0, 1j, 0, 0, 0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 1, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0, 1, 0, 0, 0],
+                [0, 0, 0, 0, 0, 0, 1, 0, 0],
+                [0, 0, 0, 0, 0, 0, 0, 1, 0],
+                [0, 0, 0, 0, 0, 0, 0, 0, 1],
+            ])
+        elif level == 2:
+            # Swap |12> and |21>
+            return qt.Qobj([
+                [1, 0, 0, 0, 0, 0, 0, 0, 0],
+                [0, 1, 0, 0, 0, 0, 0, 0, 0],
+                [0, 0, 1, 0, 0, 0, 0, 0, 0],
+                [0, 0, 0, 1, 0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 1, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0, 0, 0, 1j, 0],
+                [0, 0, 0, 0, 0, 0, 1, 0, 0],
+                [0, 0, 0, 0, 0, 1j, 0, 0, 0],
+                [0, 0, 0, 0, 0, 0, 0, 0, 1],
+        ])
+    raise ValueError("Dimension must be 2 or 3.")
 
 def hadamard_operator(dim: int) -> qt.Qobj:
     """Return a logical Hadamard operator for the given dimension.
