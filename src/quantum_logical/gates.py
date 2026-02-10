@@ -1,8 +1,8 @@
 import numpy as np
 import qutip as qt
 
-def iSwap_operator(dim: int, level:int) -> qt.Qobj:
-    """Return a logical iSWAP operator for the given dimension and swap level.
+def sqrtISWAP_operator(dim: int, level:int) -> qt.Qobj:
+    """Return a logical sqrt iSWAP operator for the given dimension and swap level.
 
     Supports `dim==2` (standard iSWAP) and `dim==3` (qutrit analogue used in the
     notebook). 
@@ -23,17 +23,17 @@ def iSwap_operator(dim: int, level:int) -> qt.Qobj:
     """
     if dim == 2:
         return qt.Qobj([[1, 0, 0, 0],
-                        [0, 0, 1j, 0],
-                        [0, 1j, 0, 0],
+                        [0, 1/np.sqrt(2), 1j/np.sqrt(2), 0],
+                        [0, 1j/np.sqrt(2), 0, 1/np.sqrt(2)],
                         [0, 0, 0, 1]])
     if dim == 3:
         if level == 1:
-            # Swap |01> and |10>
+            # Turn |01> into (|01> + i|10>)/sqrt(2) and |10> into (|10> + i|01>)/sqrt(2)
             return qt.Qobj([
                 [1, 0, 0, 0, 0, 0, 0, 0, 0],
-                [0, 0, 0, 1j, 0, 0, 0, 0, 0],
+                [0, 1/np.sqrt(2), 0, 1j/np.sqrt(2), 0, 0, 0, 0, 0],
                 [0, 0, 1, 0, 0, 0, 0, 0, 0],
-                [0, 1j, 0, 0, 0, 0, 0, 0, 0],
+                [0, 1j/np.sqrt(2), 0, 1/np.sqrt(2), 0, 0, 0, 0, 0],
                 [0, 0, 0, 0, 1, 0, 0, 0, 0],
                 [0, 0, 0, 0, 0, 1, 0, 0, 0],
                 [0, 0, 0, 0, 0, 0, 1, 0, 0],
@@ -48,11 +48,24 @@ def iSwap_operator(dim: int, level:int) -> qt.Qobj:
                 [0, 0, 1, 0, 0, 0, 0, 0, 0],
                 [0, 0, 0, 1, 0, 0, 0, 0, 0],
                 [0, 0, 0, 0, 1, 0, 0, 0, 0],
-                [0, 0, 0, 0, 0, 0, 0, 1j, 0],
+                [0, 0, 0, 0, 0, 1/np.sqrt(2), 0, 1j/np.sqrt(2), 0],
                 [0, 0, 0, 0, 0, 0, 1, 0, 0],
-                [0, 0, 0, 0, 0, 1j, 0, 0, 0],
+                [0, 0, 0, 0, 0, 1j/np.sqrt(2), 0, 1/np.sqrt(2), 0],
                 [0, 0, 0, 0, 0, 0, 0, 0, 1],
         ])
+        elif level == 3:
+            # Turn |02> into (|02> + i|20>)/sqrt(2) and |20> into (|20> + i|02>)/sqrt(2)
+            return qt.Qobj([
+                [1, 0, 0, 0, 0, 0, 0, 0, 0],
+                [0, 1, 0, 0, 0, 0, 0, 0, 0],
+                [0, 0, 1/np.sqrt(2), 0, 0, 0, 1j/np.sqrt(2), 0, 0],
+                [0, 0, 0, 1, 0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 1, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0, 1, 0, 0, 0],
+                [0, 0, 1j/np.sqrt(2), 0, 0, 0, 1/np.sqrt(2), 0, 0],
+                [0, 0, 0, 0, 0, 0, 0, 1, 0],
+                [0, 0, 0, 0, 0, 0, 0, 0, 1],
+            ])
     raise ValueError("Dimension must be 2 or 3.")
 
 def hadamard_operator(dim: int) -> qt.Qobj:
