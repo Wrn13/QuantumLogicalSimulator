@@ -24,8 +24,8 @@ def sqrtISWAP_operator(dim: int, level:int) -> qt.Qobj:
     if dim == 2:
         return qt.Qobj([[1, 0, 0, 0],
                         [0, 1/np.sqrt(2), 1j/np.sqrt(2), 0],
-                        [0, 1j/np.sqrt(2), 0, 1/np.sqrt(2)],
-                        [0, 0, 0, 1]])
+                        [0, 1j/np.sqrt(2), 1/np.sqrt(2), 0],
+                        [0, 0, 0, 1]], dims=[[2, 2], [2, 2]])
     if dim == 3:
         if level == 1:
             # Turn |01> into (|01> + i|10>)/sqrt(2) and |10> into (|10> + i|01>)/sqrt(2)
@@ -39,7 +39,7 @@ def sqrtISWAP_operator(dim: int, level:int) -> qt.Qobj:
                 [0, 0, 0, 0, 0, 0, 1, 0, 0],
                 [0, 0, 0, 0, 0, 0, 0, 1, 0],
                 [0, 0, 0, 0, 0, 0, 0, 0, 1],
-            ])
+            ], dims=[[3, 3], [3, 3]])
         elif level == 2:
             # Swap |12> and |21>
             return qt.Qobj([
@@ -52,7 +52,7 @@ def sqrtISWAP_operator(dim: int, level:int) -> qt.Qobj:
                 [0, 0, 0, 0, 0, 0, 1, 0, 0],
                 [0, 0, 0, 0, 0, 1j/np.sqrt(2), 0, 1/np.sqrt(2), 0],
                 [0, 0, 0, 0, 0, 0, 0, 0, 1],
-        ])
+        ], dims=[[3, 3], [3, 3]])
         elif level == 3:
             # Turn |02> into (|02> + i|20>)/sqrt(2) and |20> into (|20> + i|02>)/sqrt(2)
             return qt.Qobj([
@@ -65,8 +65,140 @@ def sqrtISWAP_operator(dim: int, level:int) -> qt.Qobj:
                 [0, 0, 1j/np.sqrt(2), 0, 0, 0, 1/np.sqrt(2), 0, 0],
                 [0, 0, 0, 0, 0, 0, 0, 1, 0],
                 [0, 0, 0, 0, 0, 0, 0, 0, 1],
-            ])
+            ], dims=[[3, 3], [3, 3]])
     raise ValueError("Dimension must be 2 or 3.")
+
+
+def embed_two_qutrit_gate(gate: qt.Qobj, n_qutrits: int, qutrit_a: int, qutrit_b: int) -> qt.Qobj:
+    """
+    Embed a two-qutrit gate into an n-qutrit system using QuTiP.
+    
+    The gate acts on qutrits at positions `qutrit_a` and `qutrit_b`,
+    which can be non-adjacent. All other qutrits are unaffected.
+    
+    Parameters
+    ----------
+    gate : Qobj
+        The two-qutrit gate with dims [[3,3], [3,3]].
+    n_qutrits : int
+        Total number of qutrits in the system.
+    qutrit_a, qutrit_b : int
+        Indices of the qutrits the gate acts on (0-indexed).
+        `qutrit_a` is the "first" qutrit of the gate.
+    
+    Returns
+    -------
+    Qobj
+        The gate acting on the full n-qutrit Hilbert space.
+    """
+    if qutrit_a == qutrit_b:
+        raise ValueError("qutrit_a and qutrit_b must be different")
+    if not (0 <= qutrit_a < n_qutrits and 0 <= qutrit_b < n_qutrits):
+        raise ValueError(f"Qutrit indices must be in [0, {n_qutrits})")
+    
+    # Build the operator by summing over projector contributions
+    # Gate = Σ_{ijkl} G_{kl,ij} |k⟩⟨i| ⊗ |l⟩⟨j|
+    # We embed this into the full space with identities on other qutrits
+    
+    d = 3
+    dims = [[d] * n_qutrits, [d] * n_qutrits]
+    total_dim = d ** n_qutrits
+    result_matrix = np.zeros((total_dim, total_dim), dtype=complex)
+    gate_matrix = gate.full()
+    
+    for input_index in range(total_dim):
+        input_states = _index_to_states(input_index, n_qutrits, d)
+        
+        in_a = input_states[qutrit_a]
+        in_b = input_states[qutrit_b]
+        gate_input = in_a * d + in_b
+        
+        for gate_output in range(d * d):
+            amplitude = gate_matrix[gate_output, gate_input]
+            if amplitude == 0:
+                continue
+            
+            out_a = gate_output // d
+            out_b = gate_output % d
+            
+            output_states = input_states.copy()
+            output_states[qutrit_a] = out_a
+            output_states[qutrit_b] = out_b
+            
+            output_index = _states_to_index(output_states, d)
+            result_matrix[output_index, input_index] = amplitude
+    
+    return qt.Qobj(result_matrix, dims=dims)
+
+
+def _index_to_states(index: int, n: int, d: int) -> list[int]:
+    """Convert basis index to list of subsystem states."""
+    states = []
+    for _ in range(n):
+        states.append(index % d)
+        index //= d
+    return states[::-1]
+
+
+def _states_to_index(states: list[int], d: int) -> int:
+    """Convert list of subsystem states to basis index."""
+    index = 0
+    for s in states:
+        index = index * d + s
+    return index
+
+def sqrt_iswap_qutrit(n_qutrits: int, qutrit_a: int, qutrit_b: int) -> qt.Qobj:
+    """
+    Sqrt-iSWAP gate on qutrits a and b in an n-qutrit register.
+    Qutrits can be non-adjacent.
+    """
+    return embed_two_qutrit_gate(sqrtISWAP_operator(3, 1), n_qutrits, qutrit_a, qutrit_b)
+
+def Rx_gate(theta:float):
+    """Return a logical Rx rotation operator for a single qutrit.
+
+    The returned object is a `qutip.Qobj` usable in tensor constructions.
+
+    Args:
+        theta: Rotation angle in radians.
+
+    Returns:
+        A `qutip.Qobj` representing the Rx rotation.
+    """
+    return qt.Qobj([[np.cos(theta/2), -1j*np.sin(theta/2), 0],
+                    [-1j*np.sin(theta/2), np.cos(theta/2), 0],
+                    [0, 0, 1]])
+
+
+def Ry_gate(theta:float):
+    """Return a logical Ry rotation operator for a single qutrit.
+
+    The returned object is a `qutip.Qobj` usable in tensor constructions.
+
+    Args:
+        theta: Rotation angle in radians.
+
+    Returns:
+        A `qutip.Qobj` representing the Ry rotation.
+    """
+    return qt.Qobj([[np.cos(theta/2), -np.sin(theta/2), 0],
+                    [np.sin(theta/2), np.cos(theta/2), 0],
+                    [0, 0, 1]])
+
+def Rz_gate(phi:float):
+    """Return a logical Rz rotation operator for a single qutrit.
+
+    The returned object is a `qutip.Qobj` usable in tensor constructions.
+
+    Args:
+        theta: Rotation angle in radians.
+
+    Returns:
+        A `qutip.Qobj` representing the Rz rotation.
+    """
+    return qt.Qobj([[np.exp(-1j*phi/2), 0, 0],
+                    [0, np.exp(1j*phi/2), 0],
+                    [0, 0, 1]])
 
 def hadamard_operator(dim: int) -> qt.Qobj:
     """Return a logical Hadamard operator for the given dimension.
@@ -181,5 +313,56 @@ def cnot_operator(num_qudits: int, dim: int, control_idx: int, target_idx: int, 
             else:
                 op_list.append(qt.identity(dim))
         U += qt.tensor(op_list)
-
+       
     return U
+
+def cnot_sqrt_iswap_decomposition(control_idx: int, target_idx: int, num_qudits: int, dim: int) -> list[qt.Qobj]:
+    """Helper function to return the sequence of gates for sqrtISWAP decomposition of CNOT."""
+    gate_list = []
+    operations = []
+    for i in range(num_qudits):
+        if i == control_idx:
+            operations.append(Ry_gate(np.pi/2))
+        elif i == target_idx:
+            operations.append(Rz_gate(np.pi/2))
+        else:
+            operations.append(qt.qeye(dim))
+    gate_list.append(qt.tensor(operations))
+    operations.clear()
+    for i in range(num_qudits):
+        if i == control_idx:
+            operations.append(Rz_gate(-np.pi/2))
+        elif i == target_idx:
+            operations.append(Ry_gate(-np.pi/2))
+        else:
+            operations.append(qt.qeye(dim))
+
+    gate_list.append(qt.tensor(operations))
+    operations.clear() 
+
+    gate_list.append(sqrt_iswap_qutrit(num_qudits, control_idx, target_idx))
+
+    for i in range(num_qudits):
+        if i == control_idx:
+            operations.append(Rx_gate(np.pi))
+        elif i == target_idx:
+            operations.append(Rz_gate(-np.pi))
+        else:
+            operations.append(qt.qeye(dim))
+
+    gate_list.append(qt.tensor(operations))
+    operations.clear()
+        
+    gate_list.append(sqrt_iswap_qutrit(num_qudits, control_idx, target_idx))
+
+    for i in range(num_qudits):
+        if i == control_idx:
+            operations.append(Rx_gate(np.pi/2))
+        elif i == target_idx:
+            operations.append(Rz_gate(np.pi/2))
+        else:
+            operations.append(qt.qeye(dim))
+
+    gate_list.append(qt.tensor(operations))
+
+    return gate_list
