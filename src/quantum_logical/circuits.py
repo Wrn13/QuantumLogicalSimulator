@@ -271,23 +271,24 @@ def partial_erasure_circuit(single_qudit_time: float, two_qudit_time: float, num
     measurements = [qt.tensor(qt.qeye(3), qt.qeye(3), qt.qeye(3), qt.tensor(qt.basis(3, i)) * qt.tensor(qt.basis(3, i)).dag()) for i in [0, 1]]
 
     #Recovery operations
-    r000 = r111 = [qt.tensor(*([qt.qeye(3)] * 4))]
-    r001 = [qt.tensor(qt.qeye(3), qt.qeye(3), x_gate, qt.qeye(3)), cnot4]
-    r010 = [qt.tensor(qt.qeye(3), x_gate, qt.qeye(3), qt.qeye(3)), cnot5]
-    r011 = [qt.tensor(qt.qeye(3), x_gate, qt.qeye(3), qt.qeye(3)), qt.tensor(qt.qeye(3), qt.qeye(3), x_gate, qt.qeye(3)), cnot5, cnot4]
-    r100 = [qt.tensor(x_gate, qt.qeye(3), qt.qeye(3), qt.qeye(3)), cnot6]
-    r101 = [qt.tensor(x_gate, qt.qeye(3), qt.qeye(3), qt.qeye(3)), qt.tensor(qt.qeye(3), qt.qeye(3), x_gate, qt.qeye(3)), cnot6, cnot7]
-    r110 = [qt.tensor(x_gate, qt.qeye(3), qt.qeye(3), qt.qeye(3)), qt.tensor(qt.qeye(3), x_gate, qt.qeye(3), qt.qeye(3)), cnot8, cnot9]
+    identity = qt.tensor(*([qt.qeye(3)] * N))
+    r000 = r111 = [identity]
+    r001 = [qt.tensor(qt.qeye(3), qt.qeye(3), x_gate, qt.qeye(3)), cnot4, identity]
+    r010 = [qt.tensor(qt.qeye(3), x_gate, qt.qeye(3), qt.qeye(3)), cnot5, identity]
+    r011 = [qt.tensor(qt.qeye(3), x_gate, x_gate, qt.qeye(3)), cnot5, cnot4]
+    r100 = [qt.tensor(x_gate, qt.qeye(3), qt.qeye(3), qt.qeye(3)), cnot6, identity]
+    r101 = [qt.tensor(x_gate, qt.qeye(3), x_gate, qt.qeye(3)), cnot6, cnot7]
+    r110 = [qt.tensor(x_gate, x_gate, qt.qeye(3), qt.qeye(3)), cnot8, cnot9]
     recovery_ops = [r000, r001, r010, r011, r100, r101, r110, r111]
     recovery_times = [
-        [0.0],
-        [single_qudit_time, single_qudit_time, two_qudit_time, single_qudit_time],
-        [single_qudit_time, single_qudit_time, two_qudit_time, single_qudit_time],
-        [single_qudit_time, single_qudit_time, single_qudit_time, two_qudit_time, two_qudit_time, single_qudit_time],
-        [single_qudit_time, single_qudit_time, two_qudit_time, single_qudit_time],
-        [single_qudit_time, single_qudit_time, single_qudit_time, two_qudit_time, two_qudit_time, single_qudit_time],
-        [single_qudit_time, single_qudit_time, single_qudit_time, two_qudit_time, two_qudit_time, single_qudit_time],
-        [0.0],
+        [2* two_qudit_time + single_qudit_time],
+        [single_qudit_time, two_qudit_time, two_qudit_time],
+        [single_qudit_time, two_qudit_time, two_qudit_time],
+        [single_qudit_time, two_qudit_time, two_qudit_time],
+        [single_qudit_time, two_qudit_time, two_qudit_time],
+        [single_qudit_time, two_qudit_time, two_qudit_time],
+        [single_qudit_time, two_qudit_time, two_qudit_time],
+        [2* two_qudit_time + single_qudit_time],
     ]
     return circuit, gate_time, measurements, recovery_ops, recovery_times, False
 
