@@ -276,5 +276,5 @@ def partial_phase_circuit(single_qudit_time: float, two_qudit_time: float, targe
     r10 = [qt.tensor(z_gate, qt.qeye(3), qt.qeye(3), qt.qeye(3))]
     r11 = [qt.tensor(qt.qeye(3), z_gate, qt.qeye(3), qt.qeye(3))]
     recovery_ops = [r00, r01, r10, r11]
-    recovery_times = [[0], [single_qudit_time], [single_qudit_time], [single_qudit_time]]
+    recovery_times = [[single_qudit_time], [single_qudit_time], [single_qudit_time], [single_qudit_time]]
     return circuit, gate_time, phase_measurements, recovery_ops, recovery_times, True

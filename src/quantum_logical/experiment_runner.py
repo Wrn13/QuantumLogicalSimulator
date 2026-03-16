@@ -8,11 +8,16 @@ import os
 from typing import List, Tuple
 
 import matplotlib.pyplot as plt
+import numpy as np
 import qutip as qt
 
 from quantum_logical.channel import AmplitudeDamping, PhaseDamping
 from quantum_logical.trotter import TrotterGroup
 
+
+def measurement_history_to_int(history: tuple[int]) -> int:
+    """Convert a measurement history of the form (measurements) to an integer index."""
+    return int("".join(map(str, history)), 2)
 
 class ExperimentRunner:
     @staticmethod
@@ -180,52 +185,57 @@ class ExperimentRunner:
         state_list += ExperimentRunner.run_unitary_circuit(trotterer, [qt.tensor([qt.qeye(3)] * num_qudits)], state_list[-1], [20])[1:]
 
         # Initialize the list of branches for the first setup, each branch is a tuple of (state_list, probability, [phase_measurements, erasure_measurements])
-        branched_current_states:list[qt.Qobj, float, list[list[int]]] = [(state_list[-1], 1.0, [[],[]])]
+        branched_current_states:list[qt.Qobj, float, tuple[tuple[int]]] = [(state_list[-1], 1.0, ((),()))]
         # Start applying the circuits
         for setup in setup_circuits:
             circuits, gate_times, measurements, recovery_ops, recovery_times, is_phase = setup
 
             num_steps = 0
             # Iterate over all branches
-            evolved_branches = []
+            evolved_branches:list[tuple[list, float, tuple]] = []
             for state, prob, measurement_history in branched_current_states:
                 #Run the circuit for the current branch
                 evolved_states = ExperimentRunner.run_unitary_circuit(trotterer, circuits, state, gate_times)
-                evolved_branches += (evolved_states[1:], prob, measurement_history)
-                num_steps = len(evolved_states)
+                evolved_branches.append((evolved_states[1:], prob, measurement_history))
+                # The number of steps should be the same for each branch since they run the same circuit
+                num_steps = max(len(evolved_states), num_steps)
 
-            # Add the weighted branches to the main timeline
-            for i in num_steps:
-                weighted_states = sum([prob * evolved_states[i] for prob, evolved_states, _ in evolved_branches])
+
+            for i in range(num_steps-1):
+                weighted_states = sum([prob * (evolved_states[i] if len(evolved_states) < i else evolved_states[-1]) for  evolved_states, prob, _ in evolved_branches])
                 state_list.append(weighted_states)
 
-
             # Collapse new data to final points now that we have the timeline
-            branched_current_states = [(state[-1], prob, measurement_history) for state, prob, measurement_history in evolved_branches]
+            branched_current_states:list[tuple[list[qt.Qobj], float, tuple[tuple[int], tuple[int]]]] = [(state[-1], prob, measurement_history) for state, prob, measurement_history in evolved_branches]
 
             
             # Perform measurements on updated branch
-            new_branches = []
+            new_branches:list[tuple[list[qt.Qobj], float, tuple[tuple[int], tuple[int]]]] = []
             perform_recovery = False
 
+            # Determine the number of bits measured based on the number of measurement operators (e.g. 2 for single qubit, 4 for two qubits, etc.)
+            bits_measured = int(np.log2(len(measurements)))
 
+            # Perform measurements on each branch
             for state, prob, measurement_history in branched_current_states:
                 for i, proj in enumerate(measurements):
-                    proj_state = proj * state * proj.dag()
-                    proj_result = proj_state.tr()
-
+                    proj_state:qt.Qobj = proj * state * proj.dag()
+                    proj_result:float = proj_state.tr().real
+                    result = tuple(map(int,bin(i)[2:])) if bits_measured > 1 else tuple([i])
                     if proj_result > 1e-12:
-                        # Check measurement history
+                        # Check measurement history and append new measurement
                         if is_phase:
-                            new_measurement_history = [measurement_history[0] + [i], measurement_history[1]]
+                            new_measurement_history = ((*measurement_history[0], *result), measurement_history[1])
                         else:
-                            new_measurement_history = [measurement_history[0], measurement_history[1] + [i]]
+                            new_measurement_history = (measurement_history[0], (*measurement_history[1], *result))
 
+                        # If full, perform recovery after
                         if len(new_measurement_history[0]) == 2 or len(new_measurement_history[1]) == 3:
                             perform_recovery = True
 
-                        # Add the new branch with its probability
-                        new_branches.append((proj_state / proj_result, prob * proj_result, new_measurement_history))
+                        # Reset ancillae to |0> after measurement by applying the appropriate reset operator and add to list of branches
+                        reset_operator:qt.Qobj = qt.tensor(*[qt.qeye(3)] * 3, qt.tensor([qt.basis(3,0)* qt.basis(3,res).dag() for res in result]))
+                        new_branches.append((reset_operator * proj_state * reset_operator.dag() / proj_result, prob * proj_result, new_measurement_history))
 
             branched_current_states = new_branches
 
@@ -237,34 +247,45 @@ class ExperimentRunner:
                     # Determine which recovery operation to apply based on measurement history
                     measurement_index = -1
                     if is_phase and len(measurement_history[0]) == 2:
-                        measurement_index = int("".join(map(str, measurement_history[0])), 2)
-                        new_measurement_history = [[], measurement_history[1]]
+                        measurement_index = measurement_history_to_int(measurement_history[0])
+                        new_measurement_history = ((), measurement_history[1])
                     elif not is_phase and len(measurement_history[1]) == 3:
-                        measurement_index = int("".join(map(str, measurement_history[1])), 2)
-                        new_measurement_history = [measurement_history[0], []]
+                        measurement_index = measurement_history_to_int(measurement_history[1])
+                        new_measurement_history = (measurement_history[0], ())
                     else:
                         measurement_index = -1
                         new_measurement_history = measurement_history
 
-
                     # Perform time evolution to apply the recovery operation
-                    if measurement_index != 0 and sum(recovery_times[measurement_index]) != 0.0:
-                        recovery_states = ExperimentRunner.run_unitary_circuit(trotterer, recovery_ops[measurement_index], state, recovery_times[measurement_index])
-                    else:
-                        state_current = state
-                        for recovery_op in recovery_ops[measurement_index]:
-                            state_current = recovery_op * state_current * recovery_op.dag()
-                        recovery_states = [state_current]
-
+                    recovery_states = ExperimentRunner.run_unitary_circuit(trotterer, recovery_ops[measurement_index], state, recovery_times[measurement_index])
                     recovery_results.append((recovery_states, prob, new_measurement_history))
 
                 # Combine the recovery branches into the main timeline
-                max_recovery_steps = max(len(recovery_states) for recovery_states, _ in recovery_results)
+                max_recovery_steps = max(len(recovery_states) for recovery_states, _, _ in recovery_results)
                 for t in range(max_recovery_steps):
-                    weighted_states = sum([prob * recovery_states[t] if t < len(recovery_states) else prob * recovery_states[-1] for recovery_states, prob in recovery_results])
+                    weighted_states = sum([prob * recovery_states[t] if t < len(recovery_states) else prob * recovery_states[-1] for recovery_states, prob, _ in recovery_results])
                     state_list.append(weighted_states/ weighted_states.tr())
 
-                branched_current_states = [(recovery_states[-1], prob, new_measurement_history) for recovery_states, prob, new_measurement_history in recovery_results]
+
+                # Can consolidate branches with the same measurement history by summing their states weighted by probability and normalizing by total probability to reduce branches.
+                consolidated_branches = dict()
+                consolidated_probs = dict()
+                for recovery_states, prob, new_measurement_history in recovery_results:
+                    key = new_measurement_history  # Measurement history as key
+                    
+                    # Set the states correspondng to the same measurement history to be the last state in the recovery branch, weighted by the probability of that branch.
+                    consolidated_branches[key] = consolidated_branches.get(key, qt.tensor([qt.qzero(3)] * num_qudits)) + prob * recovery_states[-1]
+                    # Marginalize over probabilities for branches with the same measurement history
+                    consolidated_probs[key] = consolidated_probs.get(key, 0) + prob
+
+                branched_current_states = [(consolidated_branches[key] / consolidated_probs[key], consolidated_probs[key], key) for key in consolidated_branches]
+
+
+         # Apply a short identity step to let channels act before the end
+        state_list += ExperimentRunner.run_unitary_circuit(trotterer, [qt.tensor([qt.qeye(3)] * num_qudits)], state_list[-1], [20])[1:]
+
 
         return state_list
+    
+
     
