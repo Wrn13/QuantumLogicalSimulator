@@ -191,7 +191,7 @@ def Rz_gate(phi:float):
     The returned object is a `qutip.Qobj` usable in tensor constructions.
 
     Args:
-        theta: Rotation angle in radians.
+        phi: Rotation angle in radians.
 
     Returns:
         A `qutip.Qobj` representing the Rz rotation.

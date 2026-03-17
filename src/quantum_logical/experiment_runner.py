@@ -182,7 +182,7 @@ class ExperimentRunner:
         state_list = [initial_state]
         
         # Apply a short identity step to let channels act before the first setup
-        state_list += ExperimentRunner.run_unitary_circuit(trotterer, [qt.tensor([qt.qeye(3)] * num_qudits)], state_list[-1], [20])[1:]
+        state_list += ExperimentRunner.run_unitary_circuit(trotterer, [qt.tensor([qt.qeye(3)] * num_qudits)], state_list[-1], [200])[1:]
 
         # Initialize the list of branches for the first setup, each branch is a tuple of (state_list, probability, [phase_measurements, erasure_measurements])
         branched_current_states:list[qt.Qobj, float, tuple[tuple[int]]] = [(state_list[-1], 1.0, ((),()))]
@@ -282,7 +282,7 @@ class ExperimentRunner:
 
 
          # Apply a short identity step to let channels act before the end
-        state_list += ExperimentRunner.run_unitary_circuit(trotterer, [qt.tensor([qt.qeye(3)] * num_qudits)], state_list[-1], [20])[1:]
+        state_list += ExperimentRunner.run_unitary_circuit(trotterer, [qt.tensor([qt.qeye(3)] * num_qudits)], state_list[-1], [200])[1:]
 
 
         return state_list
