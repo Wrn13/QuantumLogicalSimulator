@@ -9,6 +9,7 @@ from typing import List, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
+from quantum_logical.gates import hadamard_operator
 import qutip as qt
 
 from quantum_logical.channel import AmplitudeDamping, PhaseDamping
@@ -184,6 +185,7 @@ class ExperimentRunner:
         # Apply a short identity step to let channels act before the first setup
         state_list += ExperimentRunner.run_unitary_circuit(trotterer, [qt.tensor([qt.qeye(3)] * num_qudits)], state_list[-1], [200])[1:]
 
+        print("Finished pre evolution, starting setups...")
         # Initialize the list of branches for the first setup, each branch is a tuple of (state_list, probability, [phase_measurements, erasure_measurements])
         branched_current_states:list[qt.Qobj, float, tuple[tuple[int]]] = [(state_list[-1], 1.0, ((),()))]
         # Start applying the circuits
@@ -208,6 +210,33 @@ class ExperimentRunner:
             # Collapse new data to final points now that we have the timeline
             branched_current_states:list[tuple[list[qt.Qobj], float, tuple[tuple[int], tuple[int]]]] = [(state[-1], prob, measurement_history) for state, prob, measurement_history in evolved_branches]
 
+            print("Finished circuit unitary")
+
+            # Check if there are measurements to perform, if not skip to next setup
+            if len(measurements) == 0:
+                continue
+
+            measurement_time = 1
+            # Create an identity circuit for the full system
+            identity_circuit = [qt.tensor([qt.qeye(3)] * num_qudits)]
+            idle_gate_times = [measurement_time]
+            
+            evolved_idle_branches:list[tuple[list, float, tuple]] = []
+            num_idle_steps = 0
+            
+            # Evolve each branch under the identity operator
+            for state, prob, measurement_history in branched_current_states:
+                idle_states = ExperimentRunner.run_unitary_circuit(trotterer, identity_circuit, state, idle_gate_times)
+                evolved_idle_branches.append((idle_states[1:], prob, measurement_history))
+                num_idle_steps = max(len(idle_states), num_idle_steps)
+                
+            # Append the idle timeline to the state_list
+            for i in range(num_idle_steps - 1):
+                weighted_idle_states = sum([prob * (idle_states[i] if i < len(idle_states) else idle_states[-1]) for idle_states, prob, _ in evolved_idle_branches])
+                state_list.append(weighted_idle_states)
+
+            # Update branched_current_states to point to the end of the idle measurement period
+            branched_current_states = [(state[-1], prob, measurement_history) for state, prob, measurement_history in evolved_idle_branches]
             
             # Perform measurements on updated branch
             new_branches:list[tuple[list[qt.Qobj], float, tuple[tuple[int], tuple[int]]]] = []
@@ -221,7 +250,13 @@ class ExperimentRunner:
                 for i, proj in enumerate(measurements):
                     proj_state:qt.Qobj = proj * state * proj.dag()
                     proj_result:float = proj_state.tr().real
-                    result = tuple(map(int,bin(i)[2:])) if bits_measured > 1 else tuple([i])
+                
+                    result = ()
+                    if bits_measured > 1:
+                        result = tuple(map(int,bin(i)[2:].zfill(bits_measured)))  # Convert index to binary and pad with zeros
+                    else:
+                        result = tuple([i])
+                        
                     if proj_result > 1e-12:
                         # Check measurement history and append new measurement
                         if is_phase:
@@ -234,7 +269,19 @@ class ExperimentRunner:
                             perform_recovery = True
 
                         # Reset ancillae to |0> after measurement by applying the appropriate reset operator and add to list of branches
-                        reset_operator:qt.Qobj = qt.tensor(*[qt.qeye(3)] * 3, qt.tensor([qt.basis(3,0)* qt.basis(3,res).dag() for res in result]))
+                        # 1. Start with the first 3 identity operators
+                        op_list = [qt.qeye(3)] * 3
+
+                        # 2. Add the reset operators for each result (if result is empty, this safely adds nothing)
+                        op_list += [qt.basis(3,0) * qt.basis(3,res).dag() for res in result]
+
+                        # 3. Add the remaining identity operators (if remaining is <= 0, this safely adds nothing)
+                        remaining_qudits = num_qudits - 3 - bits_measured
+                        if remaining_qudits > 0:
+                            op_list += [qt.qeye(3)] * remaining_qudits
+
+                        # 4. Create the final tensor product in one go
+                        reset_operator: qt.Qobj = qt.tensor(op_list)
                         new_branches.append((reset_operator * proj_state * reset_operator.dag() / proj_result, prob * proj_result, new_measurement_history))
 
             branched_current_states = new_branches
@@ -280,8 +327,7 @@ class ExperimentRunner:
 
                 branched_current_states = [(consolidated_branches[key] / consolidated_probs[key], consolidated_probs[key], key) for key in consolidated_branches]
 
-
-         # Apply a short identity step to let channels act before the end
+        # Apply a short identity step to let channels act before the end
         state_list += ExperimentRunner.run_unitary_circuit(trotterer, [qt.tensor([qt.qeye(3)] * num_qudits)], state_list[-1], [200])[1:]
 
 
