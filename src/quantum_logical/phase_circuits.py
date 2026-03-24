@@ -86,22 +86,24 @@ def parallel_phase_circuit(single_qudit_time: float, two_qudit_time: float, num_
     gate_time.append(single_qudit_time)
 
     # Measurement operators
-    match num_ancillae:
-        case 1:
-            phase_measurements = [
-                qt.tensor(*[qt.qeye(3)] * 3, (qt.tensor(qt.basis(3, i)) * (qt.tensor(qt.basis(3, i))).dag()))
-                for i in range(2)
-            ]
-        case 2:
-            phase_measurements = [
-                qt.tensor(*[qt.qeye(3)] * 3, (qt.tensor(qt.basis(3, i), qt.basis(3, j)) * (qt.tensor(qt.basis(3, i), qt.basis(3, j))).dag()))
-                for i in range(2) for j in range(2)
-            ]
-        case _:
-            phase_measurements = [
-                qt.tensor(*[qt.qeye(3)] * 3, (qt.tensor(qt.basis(3, i), qt.basis(3, j)) * (qt.tensor(qt.basis(3, i), qt.basis(3, j))).dag()), *[qt.qeye(3)] * (num_ancillae-2))
-                for i in range(2) for j in range(2)
-            ]
+    remaining_ancillae = num_ancillae - 2
+    phase_measurements = []
+
+    for i in range(2):
+        for j in range(2):
+            # 1. Start with the first 3 identities
+            ops = [qt.qeye(3)] * 3
+            
+            # 2. Create the projection operator for the 2 ancillae and add it
+            proj_state = qt.tensor(qt.basis(3, i), qt.basis(3, j))
+            ops.append(proj_state * proj_state.dag())
+            
+            # 3. Add the remaining identities if necessary
+            if remaining_ancillae > 0:
+                ops.extend([qt.qeye(3)] * remaining_ancillae)
+                
+            # 4. Tensor it all together and append to the final list
+            phase_measurements.append(qt.tensor(ops))
 
     # Recovery operations
     z_gate = qt.Qobj([[1, 0, 0], [0, 1, 0], [0, 0, -1]])
@@ -110,7 +112,7 @@ def parallel_phase_circuit(single_qudit_time: float, two_qudit_time: float, num_
     r10 = [qt.tensor(z_gate, qt.tensor(*[qt.qeye(3)] * (N-1)))]
     r11 = [qt.tensor(qt.qeye(3), z_gate, qt.qeye(3), qt.tensor(*[qt.qeye(3)] * num_ancillae))]
     recovery_ops = [r00, r01, r10, r11]
-    recovery_times = [[0], [single_qudit_time], [single_qudit_time], [single_qudit_time]]
+    recovery_times = [[single_qudit_time], [single_qudit_time], [single_qudit_time], [single_qudit_time]]
     return circuit, gate_time, phase_measurements, recovery_ops, recovery_times, True
 
 

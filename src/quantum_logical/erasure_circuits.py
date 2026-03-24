@@ -87,33 +87,74 @@ def parallel_erasure_circuit(single_qudit_time: float, two_qudit_time: float, nu
     gate_time.append(two_qudit_time)
     
     # Measurement operators
-    match num_ancillae:
-        case 1:
-            measurements = [qt.tensor(qt.qeye(3), qt.qeye(3), qt.qeye(3), qt.tensor(qt.basis(3, i)) * qt.tensor(qt.basis(3, i)).dag()) for i in [0, 1]]
-        case 2:
-            measurements = [qt.tensor(qt.qeye(3), qt.qeye(3), qt.qeye(3), qt.tensor(qt.basis(3, i), qt.basis(3, j)) * qt.tensor(qt.basis(3, i), qt.basis(3, j)).dag()) for i in [0, 1] for j in [0, 1]]
-        case 3:
-            measurements = [qt.tensor(qt.qeye(3), qt.qeye(3), qt.qeye(3), qt.tensor(qt.basis(3, i), qt.basis(3, j), qt.basis(3, k)) * qt.tensor(qt.basis(3, i), qt.basis(3, j), qt.basis(3, k)).dag()) for i in [0, 1] for j in [0, 1] for k in [0, 1]]
-        case _:
-            measurements = [qt.tensor(qt.qeye(3), qt.qeye(3), qt.qeye(3), qt.tensor(qt.basis(3, i), qt.basis(3, j), qt.basis(3, k)) * qt.tensor(qt.basis(3, i), qt.basis(3, j), qt.basis(3, k)).dag(), *([qt.qeye(3)] * (num_ancillae-3)))  for i in [0, 1] for j in [0, 1] for k in [0, 1]]
+    measurements = [qt.tensor(qt.qeye(3), qt.qeye(3), qt.qeye(3), qt.tensor(qt.basis(3, i), qt.basis(3, j), qt.basis(3, k)) * qt.tensor(qt.basis(3, i), qt.basis(3, j), qt.basis(3, k)).dag()) for i in [0, 1] for j in [0, 1] for k in [0, 1]]
+    
     #Recovery operations
-    r000 = r111 = [qt.tensor(*([qt.qeye(3)] * 6))]
-    r001 = [qt.tensor(qt.qeye(3), qt.qeye(3), x_gate, qt.qeye(3), qt.qeye(3), qt.qeye(3)), cnot4]
-    r010 = [qt.tensor(qt.qeye(3), x_gate, qt.qeye(3), qt.qeye(3), qt.qeye(3), qt.qeye(3)), cnot5]
-    r011 = [qt.tensor(qt.qeye(3), x_gate, qt.qeye(3), qt.qeye(3), qt.qeye(3), qt.qeye(3)), qt.tensor(qt.qeye(3), qt.qeye(3), x_gate, qt.qeye(3), qt.qeye(3), qt.qeye(3)), cnot5, cnot4]
-    r100 = [qt.tensor(x_gate, qt.qeye(3), qt.qeye(3), qt.qeye(3), qt.qeye(3), qt.qeye(3)), cnot6]
-    r101 = [qt.tensor(x_gate, qt.qeye(3), qt.qeye(3), qt.qeye(3), qt.qeye(3), qt.qeye(3)), qt.tensor(qt.qeye(3), qt.qeye(3), x_gate, qt.qeye(3), qt.qeye(3), qt.qeye(3)), cnot6, cnot7]
-    r110 = [qt.tensor(x_gate, qt.qeye(3), qt.qeye(3), qt.qeye(3), qt.qeye(3), qt.qeye(3)), qt.tensor(qt.qeye(3), x_gate, qt.qeye(3), qt.qeye(3), qt.qeye(3), qt.qeye(3)), cnot8, cnot9]
+    identity = qt.tensor(*([qt.qeye(3)] * 6))
+    r000 = r111 = [identity]
+    r001 = [qt.tensor(qt.qeye(3), qt.qeye(3), x_gate, qt.qeye(3), qt.qeye(3), qt.qeye(3)), cnot4, identity]
+    r010 = [qt.tensor(qt.qeye(3), x_gate, qt.qeye(3), qt.qeye(3), qt.qeye(3), qt.qeye(3)), cnot5, identity]
+    r011 = [qt.tensor(qt.qeye(3), x_gate, x_gate, qt.qeye(3), qt.qeye(3), qt.qeye(3)), cnot5, cnot4]
+    r100 = [qt.tensor(x_gate, qt.qeye(3), qt.qeye(3), qt.qeye(3), qt.qeye(3), qt.qeye(3)), cnot6, identity]
+    r101 = [qt.tensor(x_gate, qt.qeye(3), x_gate, qt.qeye(3), qt.qeye(3), qt.qeye(3)), cnot6, cnot7]
+    r110 = [qt.tensor(x_gate, x_gate, qt.qeye(3), qt.qeye(3), qt.qeye(3), qt.qeye(3)), cnot8, cnot9]
     recovery_ops = [r000, r001, r010, r011, r100, r101, r110, r111]
     recovery_times = [
-        [0.0],
-        [single_qudit_time, single_qudit_time, two_qudit_time, single_qudit_time],
-        [single_qudit_time, single_qudit_time, two_qudit_time, single_qudit_time],
-        [single_qudit_time, single_qudit_time, single_qudit_time, two_qudit_time, two_qudit_time, single_qudit_time],
-        [single_qudit_time, single_qudit_time, two_qudit_time, single_qudit_time],
-        [single_qudit_time, single_qudit_time, single_qudit_time, two_qudit_time, two_qudit_time, single_qudit_time],
-        [single_qudit_time, single_qudit_time, single_qudit_time, two_qudit_time, two_qudit_time, single_qudit_time],
-        [0.0],
+        [single_qudit_time + 2*two_qudit_time],
+        [single_qudit_time, two_qudit_time, two_qudit_time],
+        [single_qudit_time, two_qudit_time, two_qudit_time],
+        [single_qudit_time, two_qudit_time, two_qudit_time],
+        [single_qudit_time, two_qudit_time, two_qudit_time],
+        [single_qudit_time, two_qudit_time, two_qudit_time],
+        [single_qudit_time, two_qudit_time, two_qudit_time],
+        [single_qudit_time + 2*two_qudit_time],
+    ]
+    return circuit, gate_time, measurements, recovery_ops, recovery_times, False
+
+def parallel_erasure_circuit_two_ancillae(single_qudit_time: float, two_qudit_time: float):
+    circuit = []
+    gate_time = []
+
+    # Define gates to use in operation
+    # CNOT between state qubits and ancillas
+    cnot1 = cnot_operator(num_qudits=5, dim=3, control_idx=0, target_idx=3, trigger=1)
+    cnot2 = cnot_operator(num_qudits=5, dim=3, control_idx=1, target_idx=4, trigger=1)
+    cnot4 = cnot_operator(num_qudits=5, dim=3, control_idx=0, target_idx=2, trigger=2)
+    cnot5 = cnot_operator(num_qudits=5, dim=3, control_idx=0, target_idx=1, trigger=2)
+    cnot6 = cnot_operator(num_qudits=5, dim=3, control_idx=1, target_idx=0, trigger=2)
+    cnot7 = cnot_operator(num_qudits=5, dim=3, control_idx=1, target_idx=2, trigger=2)
+    cnot8 = cnot_operator(num_qudits=5, dim=3, control_idx=2, target_idx=0, trigger=2)
+    cnot9 = cnot_operator(num_qudits=5, dim=3, control_idx=2, target_idx=1, trigger=2)
+    x_gate = qt.Qobj(np.array([[0, 1, 0], [1, 0, 0], [0, 0, 1]]))
+
+    
+    # CNOT Layer
+    circuit.append(cnot1*cnot2)
+    gate_time.append(two_qudit_time)
+    
+    # Measurement operators
+
+    measurements = [qt.tensor(qt.qeye(3), qt.qeye(3), qt.qeye(3), qt.tensor(qt.basis(3, i), qt.basis(3, j)) * qt.tensor(qt.basis(3, i), qt.basis(3, j)).dag()) for i in [0, 1] for j in [0, 1]]
+    
+    #Recovery operations
+    identity = qt.tensor(*([qt.qeye(3)] * 5))
+    r000 = r111 = [identity]
+    r001 = [qt.tensor(qt.qeye(3), qt.qeye(3), x_gate, qt.qeye(3), qt.qeye(3)), cnot4, identity]
+    r010 = [qt.tensor(qt.qeye(3), x_gate, qt.qeye(3), qt.qeye(3), qt.qeye(3)), cnot5, identity]
+    r011 = [qt.tensor(qt.qeye(3), x_gate, x_gate, qt.qeye(3), qt.qeye(3)), cnot5, cnot4]
+    r100 = [qt.tensor(x_gate, qt.qeye(3), qt.qeye(3), qt.qeye(3), qt.qeye(3)), cnot6, identity]
+    r101 = [qt.tensor(x_gate, qt.qeye(3), x_gate, qt.qeye(3), qt.qeye(3)), cnot6, cnot7]
+    r110 = [qt.tensor(x_gate, x_gate, qt.qeye(3), qt.qeye(3), qt.qeye(3)), cnot8, cnot9]
+    recovery_ops = [r000, r001, r010, r011, r100, r101, r110, r111]
+    recovery_times = [
+        [single_qudit_time + 2*two_qudit_time],
+        [single_qudit_time, two_qudit_time, two_qudit_time],
+        [single_qudit_time, two_qudit_time, two_qudit_time],
+        [single_qudit_time, two_qudit_time, two_qudit_time],
+        [single_qudit_time, two_qudit_time, two_qudit_time],
+        [single_qudit_time, two_qudit_time, two_qudit_time],
+        [single_qudit_time, two_qudit_time, two_qudit_time],
+        [single_qudit_time + 2*two_qudit_time],
     ]
     return circuit, gate_time, measurements, recovery_ops, recovery_times, False
 
@@ -272,13 +313,14 @@ def partial_erasure_circuit(single_qudit_time: float, two_qudit_time: float, num
 
     #Recovery operations
     identity = qt.tensor(*([qt.qeye(3)] * N))
+    extra_dims = qt.tensor([qt.qeye(3)] * (N-3))
     r000 = r111 = [identity]
-    r001 = [qt.tensor(qt.qeye(3), qt.qeye(3), x_gate, qt.qeye(3)), cnot4, identity]
-    r010 = [qt.tensor(qt.qeye(3), x_gate, qt.qeye(3), qt.qeye(3)), cnot5, identity]
-    r011 = [qt.tensor(qt.qeye(3), x_gate, x_gate, qt.qeye(3)), cnot5, cnot4]
-    r100 = [qt.tensor(x_gate, qt.qeye(3), qt.qeye(3), qt.qeye(3)), cnot6, identity]
-    r101 = [qt.tensor(x_gate, qt.qeye(3), x_gate, qt.qeye(3)), cnot6, cnot7]
-    r110 = [qt.tensor(x_gate, x_gate, qt.qeye(3), qt.qeye(3)), cnot8, cnot9]
+    r001 = [qt.tensor(qt.qeye(3), qt.qeye(3), x_gate, extra_dims), cnot4, identity]
+    r010 = [qt.tensor(qt.qeye(3), x_gate, qt.qeye(3), extra_dims), cnot5, identity]
+    r011 = [qt.tensor(qt.qeye(3), x_gate, x_gate, extra_dims), cnot5, cnot4]
+    r100 = [qt.tensor(x_gate, qt.qeye(3), qt.qeye(3), extra_dims), cnot6, identity]
+    r101 = [qt.tensor(x_gate, qt.qeye(3), x_gate, extra_dims), cnot6, cnot7]
+    r110 = [qt.tensor(x_gate, x_gate, qt.qeye(3), extra_dims), cnot8, cnot9]
     recovery_ops = [r000, r001, r010, r011, r100, r101, r110, r111]
     recovery_times = [
         [2* two_qudit_time + single_qudit_time],
