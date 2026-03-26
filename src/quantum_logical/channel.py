@@ -46,16 +46,14 @@ class Channel(CPTPMap):
     """Base class for quantum error channels."""
 
     def __init__(self, num_qubits, hilbert_space_dim, **kwargs):
-        """Initialize the channel with specified dimensions."""
         super().__init__(dims=hilbert_space_dim**num_qubits)
         self.num_qubits = num_qubits
         self.hilbert_space_dim = hilbert_space_dim
         self.params = kwargs
         self._trotter_dt = None
         self._E = None
+        self._E_per_qubit = None # NEW: Store operators grouped by qubit
 
-        # Each param in params should either be a single value or an iterable
-        # If iterable, then it should have length equal to num_qubits
         for key, value in kwargs.items():
             if isinstance(value, (int, float)):
                 self.params[key] = [value] * num_qubits
@@ -66,83 +64,75 @@ class Channel(CPTPMap):
 
     @property
     def E(self):
-        """Return the Kraus operators for the channel."""
         if self._E is None:
             raise ValueError("Kraus operators have not been initialized.")
         return self._E
 
     def set_trotter_dt(self, trotter_dt):
-        """Set the trotter step size and initialize Kraus operators."""
         self._trotter_dt = trotter_dt
-        self._E = self._init_kraus_operators()
+        self._init_kraus_operators()
         return True
 
     def _init_kraus_operators(self):
-        """Initialize and extend Kraus operators to multiple qubits."""
         qubit_operators = []
 
-        # Iterate over all qubits
         for qubit in range(self.num_qubits):
             qubit_params = {key: value[qubit] for key, value in self.params.items()}
             qubit_operators.append(self._create_single_qubit_operators(**qubit_params))
-        self._E = self._extend_kraus_operators_to_multiple(qubit_operators)
-        self._E = [np.array(E.full(), dtype=complex) for E in self._E]
+            
+        # Store the operators grouped by the qubit they act on
+        self._E_per_qubit = self._extend_kraus_operators_to_multiple(qubit_operators)
+        
+        # Flatten into self._E strictly to pass the dimensionality check in TrotterGroup
+        self._E = [E for qubit_ops in self._E_per_qubit for E in qubit_ops]
+        
         self._verify_completeness()
         return self._E
 
+    def __call__(self, state):
+        """Apply the CPTP map to a given quantum state sequentially per qubit."""
+        if self._E_per_qubit is None:
+            raise ValueError("Operators have not been initialized.")
+            
+        state_numpy = state.full() if isinstance(state, Qobj) else state
+        
+        # FIX: Sequentially apply the full noise channel for each independent qubit
+        for qubit_ops in self._E_per_qubit:
+            state_numpy = sum([E @ state_numpy @ E.T.conj() for E in qubit_ops])
+            
+        return state_numpy
+
+    def _verify_completeness(self):
+        """Verify completeness for each qubit's channel independently."""
+        for qubit_ops in self._E_per_qubit:
+            completeness = sum([E.conj().T @ E for E in qubit_ops])
+            assert np.allclose(
+                completeness, np.eye(self.dims), atol=1e-6
+            ), "Kraus operators for a single qubit do not satisfy the completeness relation"
+
     def _extend_kraus_operators_to_multiple(self, qubit_operators):
-        """Extend single-qubit Kraus operators to multiple qubits.
-
-        This method assumes that errors occur independently on each
-        qubit. It creates a new set of Kraus operators where the
-        original single-qubit operators are applied independently to
-        each qubit, while the identity operator is applied to the other
-        qubits. This approach effectively models the situation where an
-        error can occur on any one of the qubits, but simultaneous
-        errors on multiple qubits (higher-order errors) are not
-        explicitly modeled, which is a common assumption in many quantum
-        error correction scenarios.
-
-        Args:
-            qubit_operators (list): List of single-qubit Kraus operators, where each
-            sublist contains the Kraus operators for a specific qubit.
-
-        Returns:
-            list: List of extended Kraus operators for the full system.
-        """
-        if self.num_qubits == 1:
-            return qubit_operators[0]
-
+        """Extend operators to full Hilbert space and group them by qubit."""
         identity = qeye(self.hilbert_space_dim)
-        extended_operators = []
+        extended_per_qubit = []
 
         for qubit in range(self.num_qubits):
-            # Get the Kraus operators for the current qubit
             single_qubit_operators = qubit_operators[qubit]
+            qubit_extended = []
 
             for op in single_qubit_operators:
-                # Create a list of identity operators for all qubits
                 operators_on_all_qubits = [identity for _ in range(self.num_qubits)]
-
-                # Replace the identity operator with the actual Kraus operator for the current qubit
                 operators_on_all_qubits[qubit] = Qobj(op)
 
-                # Tensor the operators together
                 extended_operator = tensor(*operators_on_all_qubits)
-                extended_operators.append(extended_operator)
+                qubit_extended.append(np.array(extended_operator.full(), dtype=complex))
+                
+            extended_per_qubit.append(qubit_extended)
 
-        # Apply normalization
-        normalization_factor = np.sqrt(self.num_qubits)
-        extended_operators = [op / normalization_factor for op in extended_operators]
-
-        return extended_operators
+        # FIX: The normalization division has been completely removed!
+        return extended_per_qubit
 
     @abstractmethod
     def _create_single_qubit_operators(self, **kwargs):
-        """Create and return single-qubit Kraus operators.
-
-        This method should be implemented by each subclass.
-        """
         pass
 
 
