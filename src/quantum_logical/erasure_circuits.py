@@ -309,7 +309,17 @@ def partial_erasure_circuit(single_qudit_time: float, two_qudit_time: float, num
     gate_time.append(two_qudit_time)
     
     # Measurement operators
-    measurements = [qt.tensor(qt.qeye(3), qt.qeye(3), qt.qeye(3), qt.tensor(qt.basis(3, i)) * qt.tensor(qt.basis(3, i)).dag()) for i in [0, 1]]
+    measurements = []
+    for j in range(2):
+        meas_ops = []
+        for i in range(N):
+            if i == 3+target_ancilla:
+                meas_ops.append(qt.basis(3, j) * qt.basis(3, j).dag())
+            else:
+                meas_ops.append(qt.qeye(3))
+
+        measurements.append(qt.tensor(meas_ops))
+        
 
     #Recovery operations
     identity = qt.tensor(*([qt.qeye(3)] * N))

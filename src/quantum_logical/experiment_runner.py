@@ -181,17 +181,15 @@ class ExperimentRunner:
 
         # start state list
         state_list = [initial_state]
-        
-        # Apply a short identity step to let channels act before the first setup
-        state_list += ExperimentRunner.run_unitary_circuit(trotterer, [qt.tensor([qt.qeye(3)] * num_qudits)], state_list[-1], [200])[1:]
 
-        print("Finished pre evolution, starting setups...")
         # Initialize the list of branches for the first setup, each branch is a tuple of (state_list, probability, [phase_measurements, erasure_measurements])
         branched_current_states:list[qt.Qobj, float, tuple[tuple[int]]] = [(state_list[-1], 1.0, ((),()))]
         # Start applying the circuits
         for setup in setup_circuits:
             circuits, gate_times, measurements, recovery_ops, recovery_times, is_phase = setup
 
+
+            ############# PERFORM GATES ###############
             num_steps = 0
             # Iterate over all branches
             evolved_branches:list[tuple[list, float, tuple]] = []
@@ -204,7 +202,7 @@ class ExperimentRunner:
 
 
             for i in range(num_steps-1):
-                weighted_states = sum([prob * (evolved_states[i] if len(evolved_states) < i else evolved_states[-1]) for  evolved_states, prob, _ in evolved_branches])
+                weighted_states = sum([prob * (evolved_states[i] if i< len(evolved_states) else evolved_states[-1]) for  evolved_states, prob, _ in evolved_branches])
                 state_list.append(weighted_states)
 
             # Collapse new data to final points now that we have the timeline
@@ -216,6 +214,7 @@ class ExperimentRunner:
             if len(measurements) == 0:
                 continue
 
+            ############# PERFORM MEASUREMENTS
             measurement_time = 1
             # Create an identity circuit for the full system
             identity_circuit = [qt.tensor([qt.qeye(3)] * num_qudits)]
@@ -286,49 +285,51 @@ class ExperimentRunner:
 
             branched_current_states = new_branches
 
-            if perform_recovery:
-                # Apply recovery operations to each branch
-                recovery_results = []
-                for state, prob, measurement_history in branched_current_states:
-                    
-                    # Determine which recovery operation to apply based on measurement history
+            if not perform_recovery:
+                continue
+
+            ############# PERFORM RECOVERY #################
+            
+            # Apply recovery operations to each branch
+            recovery_results = []
+            for state, prob, measurement_history in branched_current_states:
+                
+                # Determine which recovery operation to apply based on measurement history
+                measurement_index = -1
+                if is_phase and len(measurement_history[0]) == 2:
+                    measurement_index = measurement_history_to_int(measurement_history[0])
+                    new_measurement_history = ((), measurement_history[1])
+                elif not is_phase and len(measurement_history[1]) == 3:
+                    measurement_index = measurement_history_to_int(measurement_history[1])
+                    new_measurement_history = (measurement_history[0], ())
+                else:
                     measurement_index = -1
-                    if is_phase and len(measurement_history[0]) == 2:
-                        measurement_index = measurement_history_to_int(measurement_history[0])
-                        new_measurement_history = ((), measurement_history[1])
-                    elif not is_phase and len(measurement_history[1]) == 3:
-                        measurement_index = measurement_history_to_int(measurement_history[1])
-                        new_measurement_history = (measurement_history[0], ())
-                    else:
-                        measurement_index = -1
-                        new_measurement_history = measurement_history
+                    new_measurement_history = measurement_history
 
-                    # Perform time evolution to apply the recovery operation
-                    recovery_states = ExperimentRunner.run_unitary_circuit(trotterer, recovery_ops[measurement_index], state, recovery_times[measurement_index])
-                    recovery_results.append((recovery_states, prob, new_measurement_history))
+                # Perform time evolution to apply the recovery operation
+                recovery_states = ExperimentRunner.run_unitary_circuit(trotterer, recovery_ops[measurement_index], state, recovery_times[measurement_index])
+                recovery_results.append((recovery_states, prob, new_measurement_history))
 
-                # Combine the recovery branches into the main timeline
-                max_recovery_steps = max(len(recovery_states) for recovery_states, _, _ in recovery_results)
-                for t in range(max_recovery_steps):
-                    weighted_states = sum([prob * recovery_states[t] if t < len(recovery_states) else prob * recovery_states[-1] for recovery_states, prob, _ in recovery_results])
-                    state_list.append(weighted_states/ weighted_states.tr())
+            # Combine the recovery branches into the main timeline
+            max_recovery_steps = max(len(recovery_states) for recovery_states, _, _ in recovery_results)
+            for t in range(max_recovery_steps):
+                weighted_states = sum([prob * recovery_states[t] if t < len(recovery_states) else prob * recovery_states[-1] for recovery_states, prob, _ in recovery_results])
+                state_list.append(weighted_states/ weighted_states.tr())
 
 
-                # Can consolidate branches with the same measurement history by summing their states weighted by probability and normalizing by total probability to reduce branches.
-                consolidated_branches = dict()
-                consolidated_probs = dict()
-                for recovery_states, prob, new_measurement_history in recovery_results:
-                    key = new_measurement_history  # Measurement history as key
-                    
-                    # Set the states correspondng to the same measurement history to be the last state in the recovery branch, weighted by the probability of that branch.
-                    consolidated_branches[key] = consolidated_branches.get(key, qt.tensor([qt.qzero(3)] * num_qudits)) + prob * recovery_states[-1]
-                    # Marginalize over probabilities for branches with the same measurement history
-                    consolidated_probs[key] = consolidated_probs.get(key, 0) + prob
+            # Can consolidate branches with the same measurement history by summing their states weighted by probability and normalizing by total probability to reduce branches.
+            consolidated_branches = dict()
+            consolidated_probs = dict()
+            for recovery_states, prob, new_measurement_history in recovery_results:
+                key = new_measurement_history  # Measurement history as key
+                
+                # Set the states correspondng to the same measurement history to be the last state in the recovery branch, weighted by the probability of that branch.
+                consolidated_branches[key] = consolidated_branches.get(key, qt.tensor([qt.qzero(3)] * num_qudits)) + prob * recovery_states[-1]
+                # Marginalize over probabilities for branches with the same measurement history
+                consolidated_probs[key] = consolidated_probs.get(key, 0) + prob
 
-                branched_current_states = [(consolidated_branches[key] / consolidated_probs[key], consolidated_probs[key], key) for key in consolidated_branches]
+            branched_current_states = [(consolidated_branches[key] / consolidated_probs[key], consolidated_probs[key], key) for key in consolidated_branches]
 
-        # Apply a short identity step to let channels act before the end
-        state_list += ExperimentRunner.run_unitary_circuit(trotterer, [qt.tensor([qt.qeye(3)] * num_qudits)], state_list[-1], [200])[1:]
 
 
         return state_list

@@ -128,7 +128,6 @@ class Channel(CPTPMap):
                 
             extended_per_qubit.append(qubit_extended)
 
-        # FIX: The normalization division has been completely removed!
         return extended_per_qubit
 
     @abstractmethod
