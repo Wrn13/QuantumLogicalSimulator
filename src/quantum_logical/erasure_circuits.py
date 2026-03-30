@@ -344,3 +344,50 @@ def partial_erasure_circuit(single_qudit_time: float, two_qudit_time: float, num
     ]
     return circuit, gate_time, measurements, recovery_ops, recovery_times, False
 
+def partial_erasure_circuit_instant(single_qudit_time: float, two_qudit_time: float, num_ancillae: int = 3, target_state: int = 0, target_ancilla: int = 0):
+    """ An erasure check on a single qutrit, performs recovery immediately after, assuming other states correct.
+
+    Args:
+        single_qudit_time (float): Time for single qudit gates
+        two_qudit_time (float): Time for two qudit gates
+        num_ancillae (int, optional): Number of ancilla qutrits to use. Defaults to 3.
+        target_state (int, optional): Index of the target state qubit. Defaults to 0.
+        target_ancilla (int, optional): Index of the target ancilla qubit. Defaults to 0.
+
+    Returns:
+        _type_: _description_
+    """
+    circuit = []
+    gate_time = []
+    N = 3 + num_ancillae
+    # Define gates to use in operation
+    # CNOT between state qubits and ancillas
+    cnot1 = cnot_operator(num_qudits=N, dim=3, control_idx=target_state, target_idx=3+ target_ancilla, trigger=1)
+    cnot4 = cnot_operator(num_qudits=N, dim=3, control_idx=target_state, target_idx=(target_state +1) % 3, trigger=2)
+    x_gate = qt.Qobj(np.array([[0, 1, 0], [1, 0, 0], [0, 0, 1]]))
+
+    # CNOT Layer
+    circuit.append(cnot1)
+    gate_time.append(two_qudit_time)
+    
+    # Measurement operators
+    measurements = [qt.tensor(qt.qeye(3), qt.qeye(3), qt.qeye(3), qt.tensor(qt.basis(3, i)) * qt.tensor(qt.basis(3, i)).dag()) for i in [0, 1]]
+
+    #Recovery operations
+    identity = qt.tensor(*([qt.qeye(3)] * N))
+    r0 = [identity]
+    recovery_reset_ops = []
+    for i in range(N):
+        if i == target_state:
+            recovery_reset_ops.append(x_gate)
+        else:
+            recovery_reset_ops.append(qt.qeye(3))
+
+    r1 = [qt.tensor(recovery_reset_ops), cnot4]
+    recovery_ops = [r0,r1]
+    recovery_times = [
+        [single_qudit_time + two_qudit_time],
+        [single_qudit_time, two_qudit_time],
+    ]
+    return circuit, gate_time, measurements, recovery_ops, recovery_times, False
+
