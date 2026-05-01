@@ -344,6 +344,72 @@ def partial_erasure_circuit(single_qudit_time: float, two_qudit_time: float, num
     ]
     return circuit, gate_time, measurements, recovery_ops, recovery_times, False
 
+def partial_erasure_circuit_no_wrapping(single_qudit_time: float, two_qudit_time: float, num_ancillae: int = 3, target_state: int = 0, target_ancilla: int = 0):
+    """ An erasure check on a single qutrit.
+
+    Args:
+        single_qudit_time (float): Time for single qudit gates
+        two_qudit_time (float): Time for two qudit gates
+        num_ancillae (int, optional): Number of ancilla qutrits to use. Defaults to 3.
+        target_state (int, optional): Index of the target state qubit. Defaults to 0.
+        target_ancilla (int, optional): Index of the target ancilla qubit. Defaults to 0.
+
+    Returns:
+        _type_: _description_
+    """
+    circuit = []
+    gate_time = []
+    N = 3 + num_ancillae
+    # Define gates to use in operation
+    # CNOT between state qubits and ancillas
+    cnot1 = cnot_operator(num_qudits=N, dim=3, control_idx=target_state, target_idx=3+ target_ancilla, trigger=1)
+    cnot5 = cnot_operator(num_qudits=N, dim=3, control_idx=0, target_idx=1, trigger=2)
+    cnot6 = cnot_operator(num_qudits=N, dim=3, control_idx=1, target_idx=0, trigger=2)
+    cnot7 = cnot_operator(num_qudits=N, dim=3, control_idx=1, target_idx=2, trigger=2)
+    cnot9 = cnot_operator(num_qudits=N, dim=3, control_idx=2, target_idx=1, trigger=2)
+    x_gate = qt.Qobj(np.array([[0, 1, 0], [1, 0, 0], [0, 0, 1]]))
+
+    
+    # CNOT Layer
+    circuit.append(cnot1)
+    gate_time.append(two_qudit_time)
+    
+    # Measurement operators
+    measurements = []
+    for j in range(2):
+        meas_ops = []
+        for i in range(N):
+            if i == 3+target_ancilla:
+                meas_ops.append(qt.basis(3, j) * qt.basis(3, j).dag())
+            else:
+                meas_ops.append(qt.qeye(3))
+
+        measurements.append(qt.tensor(meas_ops))
+        
+
+    #Recovery operations
+    identity = qt.tensor(*([qt.qeye(3)] * N))
+    extra_dims = qt.tensor([qt.qeye(3)] * (N-3))
+    r000 = r111 = [identity]
+    r001 = [qt.tensor(qt.qeye(3), qt.qeye(3), x_gate, extra_dims), cnot7, identity] # Control 1 target 2
+    r010 = [qt.tensor(qt.qeye(3), x_gate, qt.qeye(3), extra_dims), cnot5, identity] # Control 0 target 1
+    r011 = [qt.tensor(qt.qeye(3), x_gate, x_gate, extra_dims), cnot5, cnot7] # Control 0 target 1, control 1 target 2
+    r100 = [qt.tensor(x_gate, qt.qeye(3), qt.qeye(3), extra_dims), cnot6, identity] # Control 1 target 0
+    r101 = [qt.tensor(x_gate, qt.qeye(3), x_gate, extra_dims), cnot6, cnot7] # Control 1 target 0, control 1 target 2
+    r110 = [qt.tensor(x_gate, x_gate, qt.qeye(3), extra_dims), cnot9, cnot6] # Control 2 target 1, control 1 target 0
+    recovery_ops = [r000, r001, r010, r011, r100, r101, r110, r111]
+    recovery_times = [
+        [2* two_qudit_time + single_qudit_time],
+        [single_qudit_time, two_qudit_time, two_qudit_time],
+        [single_qudit_time, two_qudit_time, two_qudit_time],
+        [single_qudit_time, two_qudit_time, two_qudit_time],
+        [single_qudit_time, two_qudit_time, two_qudit_time],
+        [single_qudit_time, two_qudit_time, two_qudit_time],
+        [single_qudit_time, two_qudit_time, two_qudit_time],
+        [2* two_qudit_time + single_qudit_time],
+    ]
+    return circuit, gate_time, measurements, recovery_ops, recovery_times, False
+
 def partial_erasure_circuit_instant(single_qudit_time: float, two_qudit_time: float, num_ancillae: int = 3, target_state: int = 0, target_ancilla: int = 0):
     """ An erasure check on a single qutrit, performs recovery immediately after, assuming other states correct.
 
