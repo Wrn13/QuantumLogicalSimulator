@@ -12,7 +12,7 @@ import numpy as np
 from quantum_logical.gates import hadamard_operator
 import qutip as qt
 
-from quantum_logical.channel import AmplitudeDamping, PhaseDamping
+from quantum_logical.channel import AmplitudeDamping, PhaseDamping, Depolarizing
 from quantum_logical.trotter import TrotterGroup
 
 
@@ -40,7 +40,8 @@ class ExperimentRunner:
         """
         amp_damp = AmplitudeDamping(T1=T1, hilbert_space_dim=dim, num_qubits=num_qubits)
         phase_damp = PhaseDamping(T1=T1, T2=T2, hilbert_space_dim=dim, num_qubits=num_qubits)
-        trotterizer = TrotterGroup([amp_damp, phase_damp], trotter_dt)
+
+        trotterizer = TrotterGroup(continuous_operators=[amp_damp, phase_damp], trotter_dt=trotter_dt)
         return trotterizer
 
     @staticmethod
@@ -204,21 +205,19 @@ class ExperimentRunner:
             for i in range(num_steps-1):
                 weighted_states = sum([prob * (evolved_states[i] if i< len(evolved_states) else evolved_states[-1]) for  evolved_states, prob, _ in evolved_branches])
                 state_list.append(weighted_states)
-
+            
             # Collapse new data to final points now that we have the timeline
             branched_current_states:list[tuple[list[qt.Qobj], float, tuple[tuple[int], tuple[int]]]] = [(state[-1], prob, measurement_history) for state, prob, measurement_history in evolved_branches]
-
-            print("Finished circuit unitary")
 
             # Check if there are measurements to perform, if not skip to next setup
             if len(measurements) == 0:
                 continue
 
-            # Assume 1 microsecond measurement time for all measurements
-            ############# PERFORM MEASUREMENTS
-            measurement_time = 1
+            ############# PERFORM MEASUREMENTS #############
+            # Assume .3 microseconds measurement time for all measurements
+            measurement_time = .3
             # Create an identity circuit for the full system
-            identity_circuit = [qt.tensor([qt.qeye(3)] * num_qudits)]
+            identity_circuit = [qt.tensor([qt.qeye(2)] * num_qudits)]
             idle_gate_times = [measurement_time]
             
             evolved_idle_branches:list[tuple[list, float, tuple]] = []
@@ -271,15 +270,15 @@ class ExperimentRunner:
 
                         # Reset ancillae to |0> after measurement by applying the appropriate reset operator and add to list of branches
                         # 1. Start with the first 3 identity operators
-                        op_list = [qt.qeye(3)] * 3
+                        op_list = [qt.qeye(2)] * 3
 
                         # 2. Add the reset operators for each result (if result is empty, this safely adds nothing)
-                        op_list += [qt.basis(3,0) * qt.basis(3,res).dag() for res in result]
+                        op_list += [qt.basis(2,0) * qt.basis(2,res).dag() for res in result]
 
                         # 3. Add the remaining identity operators (if remaining is <= 0, this safely adds nothing)
                         remaining_qudits = num_qudits - 3 - bits_measured
                         if remaining_qudits > 0:
-                            op_list += [qt.qeye(3)] * remaining_qudits
+                            op_list += [qt.qeye(2)] * remaining_qudits
 
                         # 4. Create the final tensor product in one go
                         reset_operator: qt.Qobj = qt.tensor(op_list)
@@ -310,14 +309,14 @@ class ExperimentRunner:
 
                 # Perform time evolution to apply the recovery operation
                 recovery_states = ExperimentRunner.run_unitary_circuit(trotterer, recovery_ops[measurement_index], state, recovery_times[measurement_index])
-                recovery_results.append((recovery_states, prob, new_measurement_history))
+                recovery_results.append((recovery_states[1:], prob, new_measurement_history))
+
 
             # Combine the recovery branches into the main timeline
             max_recovery_steps = max(len(recovery_states) for recovery_states, _, _ in recovery_results)
             for t in range(max_recovery_steps):
                 weighted_states = sum([prob * recovery_states[t] if t < len(recovery_states) else prob * recovery_states[-1] for recovery_states, prob, _ in recovery_results])
                 state_list.append(weighted_states/ weighted_states.tr())
-
 
             # Can consolidate branches with the same measurement history by summing their states weighted by probability and normalizing by total probability to reduce branches.
             consolidated_branches = dict()
@@ -326,7 +325,7 @@ class ExperimentRunner:
                 key = new_measurement_history  # Measurement history as key
                 
                 # Set the states correspondng to the same measurement history to be the last state in the recovery branch, weighted by the probability of that branch.
-                consolidated_branches[key] = consolidated_branches.get(key, qt.tensor([qt.qzero(3)] * num_qudits)) + prob * recovery_states[-1]
+                consolidated_branches[key] = consolidated_branches.get(key, qt.tensor([qt.qzero(2)] * num_qudits)) + prob * recovery_states[-1]
                 # Marginalize over probabilities for branches with the same measurement history
                 consolidated_probs[key] = consolidated_probs.get(key, 0) + prob
 
@@ -465,6 +464,9 @@ class ExperimentRunner:
 
                         # 4. Create the final tensor product in one go
                         reset_operator: qt.Qobj = qt.tensor(op_list)
+
+                        #TODO: Add reset time
+                        
                         new_branches.append((reset_operator * proj_state * reset_operator.dag() / proj_result, prob * proj_result, new_measurement_history))
 
             branched_current_states = new_branches
