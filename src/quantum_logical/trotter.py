@@ -22,16 +22,19 @@ class TrotterGroup:
         """
         self.trotter_dt = trotter_dt
         self.continuous_operators = []
+        print(continuous_operators)
         for op in continuous_operators:
             self._compose(op)
 
     def _compose(self, operator):
         """Compose a new operator into the TrotterGroup."""
+
         # Dimensionality check
         if self.continuous_operators:
             if operator.dims != self.continuous_operators[0].dims:
                 raise ValueError("Dimension mismatch among operators in TrotterGroup.")
-        elif isinstance(operator, Channel):
+            
+        if isinstance(operator, Channel):
             if operator._trotter_dt != self.trotter_dt:
                 operator.set_trotter_dt(self.trotter_dt)
             self.continuous_operators.append(operator)

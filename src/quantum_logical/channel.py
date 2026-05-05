@@ -235,3 +235,34 @@ class PhaseDamping(Channel):
 
         else:
             raise NotImplementedError("Unsupported Hilbert space dimension.")
+        
+
+class Depolarizing(Channel):
+    """Depolarizing channel for qubits."""
+
+    def __init__(
+        self,
+        p: Union[float, List[float]],
+        num_qubits: int = 1,
+        hilbert_space_dim: int = 2,
+    ):
+        """Initialize the depolarizing channel.
+
+        Args:
+            p (float or list of floats): The depolarizing probability for the qubits.
+            num_qubits (int): The number of qubits on which the channel acts.
+            hilbert_space_dim (int): The dimension of the Hilbert space of each qubit.
+        """
+        super().__init__(num_qubits, hilbert_space_dim, p=p)
+
+    def _create_single_qubit_operators(self, p):
+        """Create single-qubit Kraus operators for depolarizing noise."""
+        if self.hilbert_space_dim == 2:  # standard qubit case
+            E0_single = np.sqrt(1 - p) * np.eye(2)
+            E1_single = np.sqrt(p / 3) * np.array([[0, 1], [1, 0]])  # X
+            E2_single = np.sqrt(p / 3) * np.array([[0, -1j], [1j, 0]])  # Y
+            E3_single = np.sqrt(p / 3) * np.array([[1, 0], [0, -1]])  # Z
+            return [E0_single, E1_single, E2_single, E3_single]
+
+        else:
+            raise NotImplementedError("Unsupported Hilbert space dimension.")
