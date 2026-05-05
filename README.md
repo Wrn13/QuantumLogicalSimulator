@@ -14,13 +14,13 @@
 
 ## 🚀 Getting Started
 
-To use ..., install using ...
-
+Use your favorite package manager to install the dependencies located in `pyproject.toml`.
+Using uv, do
 ```
-pip install -e git+https://github.com/evmckinney9/quantum_logical/#egg=quantum_logical
+uv sync
 ```
-
-Then get started by exploring the main demo located at `src/mirror_gates/notebooks/bench.ipynb`.
+to obtain the appropriate dependencies
+Then get started by exploring the main demo located at `src/notebooks/Qubit_Solver.ipynb`.
 
 ## 👯 Contributors
 <a href = "https://github.com/Pitt-JonesLab/quantum_logical/graphs/contributors">
