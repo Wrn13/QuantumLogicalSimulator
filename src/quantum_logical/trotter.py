@@ -22,7 +22,6 @@ class TrotterGroup:
         """
         self.trotter_dt = trotter_dt
         self.continuous_operators = []
-        print(continuous_operators)
         for op in continuous_operators:
             self._compose(op)
 

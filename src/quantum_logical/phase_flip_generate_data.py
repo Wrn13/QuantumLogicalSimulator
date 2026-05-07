@@ -1,0 +1,80 @@
+# Import the compact ExperimentRunner and required libs
+import os
+from typing import List
+
+import matplotlib.pyplot as plt
+import numpy as np
+import qutip as qt
+
+from quantum_logical.experiment_runner import ExperimentRunner
+from quantum_logical.channel import AmplitudeDamping
+from quantum_logical.trotter import TrotterGroup
+
+
+from quantum_logical.qubit_phase import qubit_parallel_phase_circuit, qubit_partial_phase_circuit
+
+def single_run_n_iterations(n:int):
+
+    setup_5 = [
+    qubit_parallel_phase_circuit(single_qubit_time, two_qubit_time, num_ancillae=2)
+    ] * 2*n
+
+    setup_4 = [
+    qubit_partial_phase_circuit(single_qubit_time, two_qubit_time, target_state = 0),
+    qubit_partial_phase_circuit(single_qubit_time, two_qubit_time, target_state = 1),
+    ] * n
+
+    trotter_4 = runner.generate_trotterizer(0.03, T1, T2, 2, 4)
+    trotter_5 = runner.generate_trotterizer(0.03, T1, T2, 2, 5)
+
+    ancilla_zero = qt.ket2dm(qt.basis(2, 0))
+    state_list_4 = runner.experiment_partial_run(trotter_4, qt.tensor(init_rho, ancilla_zero), setup_4)
+    state_list_5 = runner.experiment_partial_run(trotter_5, qt.tensor(init_rho, ancilla_zero, ancilla_zero), setup_5)
+
+    ideal_dropped_states_4 = [qt.tensor(init_rho, ancilla_zero)]
+    ideal_dropped_states_5 = [qt.tensor(init_rho, ancilla_zero, ancilla_zero)]
+    ideal_dropped_states_4 = runner.run_unitary_circuit(trotter_4, [qt.tensor(*[qt.qeye(2)]*4)], state_list_4[0], [37 * single_qubit_time])[:-1]
+    ideal_dropped_states_5 = runner.run_unitary_circuit(trotter_5, [qt.tensor(*[qt.qeye(2)]*5)], state_list_5[0], [19 * single_qubit_time])[:-1]
+    ideal_dropped_states_4.append(state_list_4[37])
+    ideal_dropped_states_5.append(state_list_5[19])
+    for i in range(1,n):
+        ideal_dropped_states_4 += runner.run_unitary_circuit(trotter_4, [qt.tensor(*[qt.qeye(2)]*4)], state_list_4[37 * i], [37 * single_qubit_time])[1:-1]
+        ideal_dropped_states_4.append(state_list_4[37*(i+1)])
+    for i in range(1,2*n):
+        ideal_dropped_states_5 += runner.run_unitary_circuit(trotter_5, [qt.tensor(*[qt.qeye(2)]*5)], state_list_5[19 * i], [19 * single_qubit_time])[1:-1]
+        ideal_dropped_states_5.append(state_list_5[19*(i+1)])
+    
+    no_correction = runner.run_unitary_circuit(trotter_4, [qt.tensor(*[qt.qeye(2)]*4)], qt.tensor(init_rho, ancilla_zero), [len(ideal_dropped_states_4) * single_qubit_time]) [:-1]   
+
+
+
+
+single_qubit_time = 0.03 # 30 nanosec
+two_qubit_time = 0.102 # 102 nanosec
+
+
+# Define starting states
+plus_state = qt.gates.snot() * qt.basis(2,0)
+minus_state = qt.gates.snot() * qt.basis(2,1)
+zero_logical = qt.tensor(plus_state, plus_state, plus_state)
+one_logical = qt.tensor(minus_state, minus_state, minus_state)
+plus_logical = 1/np.sqrt(2) * (zero_logical + one_logical)
+minus_logical = 1/np.sqrt(2) * (zero_logical - one_logical)
+ 
+runner = ExperimentRunner()
+
+T1_list = [280, 280, 100]
+T2_list = [100, 330, 330]
+
+initial_states = [zero_logical, one_logical, plus_logical, minus_logical]
+initial_state_names = [r"$\ket{0}_L", r"$\ket{1}_L", r"$\ket{+}_L", r"$\ket{-}_L" ]
+for T1,T2 in zip(T1_list, T2_list):
+    for initial_state, initial_state_name in zip(initial_states, initial_state_names):
+        # Create the initial density matrices
+        initial_rho_4q = qt.ket2dm(qt.tensor(initial_state, qt.basis(2,0)))
+        initial_rho_5q = qt.ket2dm(qt.tensor(initial_state, qt.basis(2,0), qt.basis(2,0)))
+
+        print(f"Running T1 = {T1}, T2 = {T2} for starting state {initial_state_name}")
+
+
+
