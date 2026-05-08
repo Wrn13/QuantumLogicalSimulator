@@ -15,7 +15,7 @@ from quantum_logical.qubit_phase import (
 from quantum_logical.trotter import TrotterGroup
 
 
-def single_run_n_iterations(n:int, init_rho:qt.Qobj, T1:float, T2:float, single_qubit_time:float, two_qubit_time:float, runner:ExperimentRunner):
+def single_run_n_iterations(n:int, init_rho:qt.Qobj, T1:float, T2:float, single_qubit_time:float, two_qubit_time:float, runner:ExperimentRunner, filename:str):
 
     setup_5 = [
     qubit_parallel_phase_circuit(single_qubit_time, two_qubit_time, num_ancillae=2)
@@ -48,7 +48,7 @@ def single_run_n_iterations(n:int, init_rho:qt.Qobj, T1:float, T2:float, single_
     
     no_correction = runner.run_unitary_circuit(trotter_4, [qt.tensor(*[qt.qeye(2)]*4)], qt.tensor(init_rho, ancilla_zero), [len(ideal_dropped_states_4) * single_qubit_time]) [:-1]  
 
-    return no_correction, ideal_dropped_states_4, ideal_dropped_states_5 
+    np.savez(filename, no_correction, ideal_dropped_states_4, ideal_dropped_states_5)
 
 
 def generate_haar_random_logical_state(zero_logical, one_logical):
