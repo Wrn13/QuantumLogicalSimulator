@@ -15,11 +15,13 @@ from quantum_logical.qubit_phase import (
 from quantum_logical.trotter import TrotterGroup
 
 
-def single_run_n_iterations(n:int, init_rho:qt.Qobj, T1:float, T2:float, single_qubit_time:float, two_qubit_time:float, runner:ExperimentRunner, filename:str):
+def single_run_n_iterations(n:int, init_state:qt.Qobj, T1:float, T2:float, single_qubit_time:float, two_qubit_time:float, runner:ExperimentRunner, filename:str):
+
+    init_rho = qt.ket2dm(init_state)
 
     setup_5 = [
     qubit_parallel_phase_circuit(single_qubit_time, two_qubit_time, num_ancillae=2)
-    ] * 2*n
+    ] * int(37/19*n)
 
     setup_4 = [
     qubit_partial_phase_circuit(single_qubit_time, two_qubit_time, target_state = 0),
@@ -28,7 +30,6 @@ def single_run_n_iterations(n:int, init_rho:qt.Qobj, T1:float, T2:float, single_
 
     trotter_4 = runner.generate_trotterizer(0.03, T1, T2, 2, 4)
     trotter_5 = runner.generate_trotterizer(0.03, T1, T2, 2, 5)
-
     ancilla_zero = qt.ket2dm(qt.basis(2, 0))
     state_list_4 = runner.experiment_partial_run(trotter_4, qt.tensor(init_rho, ancilla_zero), setup_4)
     state_list_5 = runner.experiment_partial_run(trotter_5, qt.tensor(init_rho, ancilla_zero, ancilla_zero), setup_5)
@@ -42,7 +43,7 @@ def single_run_n_iterations(n:int, init_rho:qt.Qobj, T1:float, T2:float, single_
     for i in range(1,n):
         ideal_dropped_states_4 += runner.run_unitary_circuit(trotter_4, [qt.tensor(*[qt.qeye(2)]*4)], state_list_4[37 * i], [37 * single_qubit_time])[1:-1]
         ideal_dropped_states_4.append(state_list_4[37*(i+1)])
-    for i in range(1,2*n):
+    for i in range(1,int(37/19*n)):
         ideal_dropped_states_5 += runner.run_unitary_circuit(trotter_5, [qt.tensor(*[qt.qeye(2)]*5)], state_list_5[19 * i], [19 * single_qubit_time])[1:-1]
         ideal_dropped_states_5.append(state_list_5[19*(i+1)])
     
@@ -80,19 +81,32 @@ def main():
 
     initial_states = [zero_logical, one_logical, plus_logical, minus_logical, i_logical, minus_i_logical]
     
-    initial_state_names = [r"$\ket{0}_L$", r"$\ket{1}_L$", r"$\ket{+}_L$", r"$\ket{-}_L$", r"$\ket{i}_L$", r"$\ket{-i}_L$" ]
+    initial_state_names = ["0", "1", "+", "-", "i", "-i" ]
 
-    print("Running orthogonal states:")
-    for T1,T2 in zip(T1_list, T2_list):
-        for initial_state, initial_state_name in zip(initial_states, initial_state_names):
-            # Create the initial density matrices
-            initial_rho_4q = qt.ket2dm(qt.tensor(initial_state, qt.basis(2,0)))
-            initial_rho_5q = qt.ket2dm(qt.tensor(initial_state, qt.basis(2,0), qt.basis(2,0)))
+    # print("Running orthogonal states:")
+    # for T1,T2 in zip(T1_list, T2_list):
+    #     for initial_state, initial_state_name in zip(initial_states, initial_state_names):
+    #         for n in [12, 600]:
+    #             print(f"Running {n} iterations of T1 = {T1}, T2 = {T2} for starting state {initial_state_name}")
 
-            print(f"Running T1 = {T1}, T2 = {T2} for starting state {initial_state_name}")
+    #             filename = f"{n}_itr_T1_{T1}_T2_{T2}_{initial_state_name}.npz"
+    #             try:
+    #                 single_run_n_iterations(n, initial_state, T1, T2, single_qubit_time, two_qubit_time, runner, filename)
+    #             except Exception as e:
+    #                 print("ERROR: Got ", e)
+    #                 continue
 
-    num_initial_states = 16
     print("Running Haar random states:")
+    num_initial_states = 16
+    initial_states = [generate_haar_random_logical_state(zero_logical, one_logical) for _ in range(num_initial_states)]
+    for T1,T2 in zip(T1_list, T2_list):
+        for i,initial_state in enumerate(initial_states):
+            for n in [12, 600]:
+                print(f"Running {n} iterations of {i}th Haar random state T1 = {T1}, T2 = {T2}")
+
+                filename = f"{i}_{n}_itr_T1_{T1}_T2_{T2}.npz"
+
+                single_run_n_iterations(n, initial_state, T1, T2, single_qubit_time, two_qubit_time, runner, filename)
 if __name__ == "__main__":
     main()
 
