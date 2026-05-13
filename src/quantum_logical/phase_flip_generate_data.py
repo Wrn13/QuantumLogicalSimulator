@@ -1,5 +1,6 @@
 # Import the compact ExperimentRunner and required libs
 import os
+from pathlib import Path
 from typing import List
 
 import matplotlib.pyplot as plt
@@ -52,8 +53,10 @@ def single_run_n_iterations(n:int, init_state:qt.Qobj, T1:float, T2:float, singl
     np.savez(filename, no_correction, ideal_dropped_states_4, ideal_dropped_states_5)
 
 
-def generate_haar_random_logical_state(zero_logical, one_logical):
-    coeffs = np.random.rand(2) + 1j * np.random.rand(2)
+def generate_haar_random_logical_state(zero_logical, one_logical, rng = None):
+    rng = rng if rng is not None else np.random.default_rng()
+
+    coeffs = rng.standard_normal(2) + 1j * rng.standard_normal(2)
     coeffs /= np.linalg.norm(coeffs)
     print(coeffs)
     return coeffs[0] * zero_logical + coeffs[1] * one_logical
@@ -76,37 +79,42 @@ def main():
     
     runner = ExperimentRunner()
 
-    T1_list = [280, 280, 100]
-    T2_list = [100, 330, 330]
+    T1_list = [100]
+    T2_list = [100]
 
     initial_states = [zero_logical, one_logical, plus_logical, minus_logical, i_logical, minus_i_logical]
     
     initial_state_names = ["0", "1", "+", "-", "i", "-i" ]
 
-    # print("Running orthogonal states:")
-    # for T1,T2 in zip(T1_list, T2_list):
-    #     for initial_state, initial_state_name in zip(initial_states, initial_state_names):
-    #         for n in [12, 600]:
-    #             print(f"Running {n} iterations of T1 = {T1}, T2 = {T2} for starting state {initial_state_name}")
+    print("Running orthogonal states:")
+    for T1,T2 in zip(T1_list, T2_list):
+        for initial_state, initial_state_name in zip(initial_states, initial_state_names):
+            for n in [12, 600]:
+                print(f"Running {n} iterations of T1 = {T1}, T2 = {T2} for starting state {initial_state_name}")
 
-    #             filename = f"{n}_itr_T1_{T1}_T2_{T2}_{initial_state_name}.npz"
+                filename = f"data/key_initial_states/{n}_itr_T1_{T1}_T2_{T2}_{initial_state_name}.npz"
+                try:
+                    single_run_n_iterations(n, initial_state, T1, T2, single_qubit_time, two_qubit_time, runner, filename)
+                except Exception as e:
+                    print("ERROR: Got ", e)
+                    continue
+
+    # print("Running Haar random states:")
+    # num_initial_states = 16
+    # rng = np.random.default_rng(1)
+    # initial_states = [generate_haar_random_logical_state(zero_logical, one_logical, rng) for _ in range(num_initial_states)]
+    # for T1,T2 in zip(T1_list, T2_list):
+    #     for i,initial_state in enumerate(initial_states):
+    #         for n in [12, 600]:
+    #             print(f"Running {n} iterations of {i}th Haar random state T1 = {T1}, T2 = {T2}")
+
+    #             filename = f"data/haar_random_states/{i}_{n}_itr_T1_{T1}_T2_{T2}.npz"
+
     #             try:
     #                 single_run_n_iterations(n, initial_state, T1, T2, single_qubit_time, two_qubit_time, runner, filename)
-    #             except Exception as e:
-    #                 print("ERROR: Got ", e)
+    #             except Exception as e: 
+    #                 Path(filename).unlink(missing_ok=True)
     #                 continue
-
-    print("Running Haar random states:")
-    num_initial_states = 16
-    initial_states = [generate_haar_random_logical_state(zero_logical, one_logical) for _ in range(num_initial_states)]
-    for T1,T2 in zip(T1_list, T2_list):
-        for i,initial_state in enumerate(initial_states):
-            for n in [12, 600]:
-                print(f"Running {n} iterations of {i}th Haar random state T1 = {T1}, T2 = {T2}")
-
-                filename = f"{i}_{n}_itr_T1_{T1}_T2_{T2}.npz"
-
-                single_run_n_iterations(n, initial_state, T1, T2, single_qubit_time, two_qubit_time, runner, filename)
 if __name__ == "__main__":
     main()
 
