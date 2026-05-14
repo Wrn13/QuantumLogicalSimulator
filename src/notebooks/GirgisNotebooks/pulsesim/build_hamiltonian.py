@@ -1,6 +1,6 @@
 import qutip as qt
-from quantum_logical.pulsesim import QuantumSystem
-from quantum_logical.pulsesim.mode import QubitMode, SNAILMode
+from notebooks.GirgisNotebooks.pulsesim import QuantumSystem
+from notebooks.GirgisNotebooks.pulsesim.mode import QubitMode, SNAILMode
 import matplotlib.pyplot as plt
 from itertools import product
 from tqdm.notebook import tqdm

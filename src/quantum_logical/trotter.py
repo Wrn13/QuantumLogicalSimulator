@@ -3,6 +3,7 @@
 from typing import Iterable
 
 import numpy as np
+from quantum_logical.noisy_gate import NoisyGate
 from qutip import Qobj
 from scipy.linalg import fractional_matrix_power
 
@@ -41,6 +42,7 @@ class TrotterGroup:
             self.continuous_operators.append(operator)
         else:
             raise ValueError("Invalid operator type.")
+        
 
     def apply(self, state, duration, discrete_unitary=None):
         """Apply the group of operators to the state over a specified duration.
@@ -55,6 +57,15 @@ class TrotterGroup:
         """
         # convert into numpy ndarray
         state_numpy = state.full() if isinstance(state, Qobj) else state
+
+        gate_kraus = None
+        if isinstance(discrete_unitary, NoisyGate):
+            gate_kraus = discrete_unitary.kraus_operators
+            # If the caller didn't pass a duration, take it from the gate.
+            if duration is None:
+                duration = discrete_unitary.duration
+
+            discrete_unitary = discrete_unitary.unitary
 
         if discrete_unitary is not None and not Qobj(discrete_unitary).isunitary:
             raise ValueError("Discrete unitary must be unitary.")
@@ -72,13 +83,15 @@ class TrotterGroup:
         if num_steps == 0:
             if discrete_unitary is not None:
                 return Qobj(discrete_unitary @ state_numpy @ discrete_unitary.T.conj())
-            return state
+            return [state]
 
         fractional_unitary = None
         if discrete_unitary is not None:
             fractional_unitary = fractional_matrix_power(
                 discrete_unitary, 1 / float(num_steps)
             )
+
+        
         states = []
         for _ in range(num_steps):
             # Apply each continuous operator
@@ -91,5 +104,11 @@ class TrotterGroup:
                     fractional_unitary @ state_numpy @ fractional_unitary.T.conj()
                 )
             states.append(Qobj(state_numpy, dims=state.dims) / np.trace(state_numpy))
+        
+        # Apply the time independent channel corresponding to the gate error at the end.
+        if gate_kraus is not None and states:
+            final_numpy = sum(E @ state_numpy @ E.conj().T for E in gate_kraus)
+            states[-1] = Qobj(final_numpy, dims=state.dims) / np.trace(final_numpy)
+            state_numpy = final_numpy
         # return Qobj(state_numpy, dims=state.dims) / np.trace(state_numpy)
         return states

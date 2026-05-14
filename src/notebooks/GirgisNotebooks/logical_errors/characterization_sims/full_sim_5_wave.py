@@ -6,7 +6,7 @@ from tqdm import tqdm
 from scipy.optimize import curve_fit
 from itertools import product
 from quantum_logical.gate_extender import Gate_extender, Convert_levels
-from quantum_logical.trotterization import Trotterization
+from notebooks.GirgisNotebooks.trotterization import Trotterization
 
 
 def gate( dim, N):

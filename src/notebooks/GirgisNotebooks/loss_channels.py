@@ -1,7 +1,7 @@
 import qutip as qt
 from qutip import tensor, basis
 import numpy as np
-from quantum_logical.trotterization import Trotterization
+from notebooks.GirgisNotebooks.trotterization import Trotterization
 
 
 # confirming the operation using the kraus operators 

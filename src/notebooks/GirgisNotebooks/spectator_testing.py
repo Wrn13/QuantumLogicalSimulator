@@ -1,47 +1,51 @@
 import numpy as np
 from qutip import Options, ket2dm
 import qutip as qt
-from quantum_logical.pulsesim import QuantumSystem, Pulse
-from quantum_logical.pulsesim.mode import QubitMode, SNAILMode, CavityMode
-from quantum_logical.pulsesim.build_hamiltonian import Build_hamiltonian
+from notebooks.GirgisNotebooks.pulsesim import QuantumSystem, Pulse
+from notebooks.GirgisNotebooks.pulsesim.mode import QubitMode, SNAILMode, CavityMode
+from notebooks.GirgisNotebooks.pulsesim.build_hamiltonian import Build_hamiltonian
 import matplotlib.pyplot as plt
 from itertools import product
 from tqdm.notebook import tqdm
 import cmath
-from qutip_qip.operations import iswap
+from qutip.qip.operations import iswap
 from scipy.optimize import curve_fit
 
-
-class Module_build():
-    def __init__(self, dim, lam_power, mod_count):
-        self.choice = lam_power
-        self.word = mod_count
-        self.dim = dim
-
+class spectator():
+    def __init__(self, qubit_3, lam_power, lam_mag, amp):
+        self.qubit_3 = qubit_3
+        self.lam_power = lam_power
+        self.lam_mag = lam_mag
         lambda_power = []
 
         # build the four qubit system
 
         w1_un = 4
         w2_un = 6
-        w3_un = 4.0000000001
-        w4_un = 5.9999999999
+        # w3_un = 4.00000000000001
+        # w4_un = 5.99999999999999
+        w3_un = qubit_3
+        # w4_un = 5.5
         ws_un = 6 - (1 / 3) * (1 / 2)
 
+        self.w1 = w1_un
+        self.w2 = w2_un
 
+        dim = 2
         qubit1 = QubitMode(mode_type = "Qubit",
-            name="q1", dim=self.dim, freq=w1_un, alpha=-0.161, T1=1e2, T2=5e1
+            name="q1", dim=dim, freq=w1_un, alpha=-0.161, T1=1e2, T2=5e1
         )
         qubit2 = QubitMode(mode_type = "Qubit",
-            name="q2", dim=self.dim, freq=w2_un, alpha=-0.1275, T1=1e2, T2=5e1
+            name="q2", dim=dim, freq=w2_un, alpha=-0.1275, T1=1e2, T2=5e1
         )
         qubit3 = QubitMode(mode_type = "Qubit",
-            name="q3", dim=self.dim, freq=w3_un, alpha=-0.160, T1=1e2, T2=5e1
+            name="q3", dim=dim, freq=w3_un, alpha=-0.160, T1=1e2, T2=5e1
         )
-        qubit4 = QubitMode(mode_type = "Qubit",
-            name="q4", dim=self.dim, freq=w4_un, alpha=-0.159, T1=1e2, T2=5e1
-        )
-        qubits = [qubit1, qubit2, qubit3, qubit4]
+        # qubit4 = QubitMode(mode_type = "Qubit",
+        #     name="q4", dim=dim, freq=w4_un, alpha=-0.159, T1=1e2, T2=5e1
+        # )
+        # qubits = [qubit1, qubit2, qubit3, qubit4]
+        qubits = [qubit1, qubit2, qubit3]
         snail = SNAILMode(mode_type = "Snail", name="s", freq=ws_un, g3=0.3, dim=10, T1=1e3, T2=5e2)
         _couplings = {
             frozenset([qubit1, snail]): 2 * np.pi * 0.05467,
@@ -50,14 +54,14 @@ class Module_build():
         }
 
         qs = QuantumSystem(qubits + [snail], couplings=_couplings)
-    
+
         # important multipliers and hamiltonian prefactors 
-        l1 = l2 = l3 = .1
+        l1 = l2 = l3 = self.lam_mag
 
         w1 = qubit1.freq / (2 * np.pi) 
         w2 = qubit2.freq / (2 * np.pi) 
         w3 = qubit3.freq / (2 * np.pi)  
-        w4 = qubit4.freq / (2 * np.pi) 
+        # w4 = qubit4.freq / (2 * np.pi) 
         ws = snail.freq / (2 * np.pi)
 
         # time over which to optimize
@@ -92,23 +96,35 @@ class Module_build():
 
         qubit3_qubit2_adj_H = qs.modes_a[qubit3]*qs.modes_a_dag[qubit2]
         qubit3_adj_qubit2_H = qs.modes_a[qubit2]*qs.modes_a_dag[qubit3]
-        qubit4_qubit2_adj_H = qs.modes_a[qubit4]*qs.modes_a_dag[qubit2]
-        qubit4_adj_qubit2_H = qs.modes_a[qubit2]*qs.modes_a_dag[qubit4]
+        # qubit4_qubit2_adj_H = qs.modes_a[qubit4]*qs.modes_a_dag[qubit2]
+        # qubit4_adj_qubit2_H = qs.modes_a[qubit2]*qs.modes_a_dag[qubit4]
         qubit3_qubit1_adj_H = qs.modes_a[qubit3]*qs.modes_a_dag[qubit1]
         qubit3_adj_qubit1_H = qs.modes_a[qubit1]*qs.modes_a_dag[qubit3]
-        qubit4_qubit1_adj_H = qs.modes_a[qubit4]*qs.modes_a_dag[qubit1]
-        qubit4_adj_qubit1_H = qs.modes_a[qubit1]*qs.modes_a_dag[qubit4]
+        # qubit4_qubit1_adj_H = qs.modes_a[qubit4]*qs.modes_a_dag[qubit1]
+        # qubit4_adj_qubit1_H = qs.modes_a[qubit1]*qs.modes_a_dag[qubit4]
+        # qubit3_qubit4_adj_H = qs.modes_a[qubit3]*qs.modes_a_dag[qubit4]
+        # qubit3_adj_qubit4_H = qs.modes_a[qubit4]*qs.modes_a_dag[qubit3]
+
+        # H_added = [
+        #         qubit3_qubit2_adj_H,
+        #         qubit3_adj_qubit2_H,
+        #         qubit4_qubit2_adj_H,
+        #         qubit4_adj_qubit2_H,
+        #         qubit3_qubit1_adj_H,
+        #         qubit3_adj_qubit1_H,
+        #         qubit4_qubit1_adj_H,
+        #         qubit4_adj_qubit1_H, 
+        #         qubit3_qubit4_adj_H,
+        #         qubit3_adj_qubit4_H
+        #         ]
 
         H_added = [
-        qubit3_qubit2_adj_H,
-        qubit3_adj_qubit2_H,
-        qubit4_qubit2_adj_H,
-        qubit4_adj_qubit2_H,
-        qubit3_qubit1_adj_H,
-        qubit3_adj_qubit1_H,
-        qubit4_qubit1_adj_H,
-        qubit4_adj_qubit1_H
-        ]
+                qubit3_qubit2_adj_H,
+                qubit3_adj_qubit2_H,
+                qubit3_qubit1_adj_H,
+                qubit3_adj_qubit1_H
+                ]
+
 
         H_modified = []
         def choose_lambda(choice):
@@ -126,14 +142,14 @@ class Module_build():
 
             return H_modified
 
-
-        # combine all of the hamiltonian terms into one list
+        choice = self.lam_power
         H_total = []
         H_total.extend(H_main_qubits)
         # call in the function 
-        H_mod = choose_lambda(self.choice)
-        lambda_power.append(self.choice)
+        H_mod = choose_lambda(choice=choice)
+        lambda_power.append(choice)
         H_total.extend(H_mod)
+        len(H_total)
 
         # build the pulses for the unitary 
         def int_func(w1,w2,wp,t):
@@ -160,28 +176,41 @@ class Module_build():
         qubit2_qubit3_adj_val = int_func(w2,w3,wp,T) + int_func_conj_wp(w2,w3,wp,T)
         qubit1_adj_qubit3_val = int_func(w3,w1,wp,T) + int_func_conj_wp(w3,w1,wp,T)
         qubit2_adj_qubit3_val = int_func(w3,w2,wp,T) + int_func_conj_wp(w3,w2,wp,T)
-        qubit1_qubit4_adj_val = int_func(w1,w4,wp,T) + int_func_conj_wp(w1,w4,wp,T)
-        qubit2_qubit4_adj_val = int_func(w2,w4,wp,T) + int_func_conj_wp(w2,w4,wp,T)
-        qubit1_adj_qubit4_val = int_func(w4,w1,wp,T) + int_func_conj_wp(w4,w1,wp,T)
-        qubit2_adj_qubit4_val = int_func(w4,w2,wp,T) + int_func_conj_wp(w4,w2,wp,T)
+        # qubit1_qubit4_adj_val = int_func(w1,w4,wp,T) + int_func_conj_wp(w1,w4,wp,T)
+        # qubit2_qubit4_adj_val = int_func(w2,w4,wp,T) + int_func_conj_wp(w2,w4,wp,T)
+        # qubit1_adj_qubit4_val = int_func(w4,w1,wp,T) + int_func_conj_wp(w4,w1,wp,T)
+        # qubit2_adj_qubit4_val = int_func(w4,w2,wp,T) + int_func_conj_wp(w4,w2,wp,T)
+        # qubit3_qubit4_adj_val = int_func(w3,w4,wp,T) + int_func_conj_wp(w3,w4,wp,T)
+        # qubit3_adj_qubit4_val = int_func(w4,w3,wp,T) + int_func_conj_wp(w4,w3,wp,T)
 
         # building the time_multiplier list 
+        # T_mult = [
+        # T,
+        # qubit1_qubit2_adj_val,
+        # qubit1_adj_qubit2_val,
+        # qubit2_adj_qubit3_val,
+        # qubit2_qubit3_adj_val,
+        # qubit2_adj_qubit4_val,
+        # qubit2_qubit4_adj_val,
+        # qubit1_adj_qubit3_val,
+        # qubit1_qubit3_adj_val,
+        # qubit1_adj_qubit4_val,
+        # qubit1_qubit4_adj_val,
+        # qubit3_qubit4_adj_val,
+        # qubit3_adj_qubit4_val
+        # ]
+
         T_mult = [
         T,
         qubit1_qubit2_adj_val,
         qubit1_adj_qubit2_val,
         qubit2_adj_qubit3_val,
         qubit2_qubit3_adj_val,
-        qubit2_adj_qubit4_val,
-        qubit2_qubit4_adj_val,
         qubit1_adj_qubit3_val,
-        qubit1_qubit3_adj_val,
-        qubit1_adj_qubit4_val,
-        qubit1_qubit4_adj_val
+        qubit1_qubit3_adj_val
         ]
 
-        # determine the amount of modules in the system 
-        # takes care of the hamiltonian terms and the pulse terms 
+
         def mod_amount(count):
             H_tot = []
             ts = []
@@ -189,14 +218,15 @@ class Module_build():
             ts.append(T_mult[1])
             ts.append(T_mult[2])
             H_tot.extend(H_main_qubits)
-            for j in range(count):
-                for i in range(3,len(H_total)):
+            for _ in range(count):
+                for i in range(3, len(H_total)):
                     H_tot.append(H_total[i])
                     ts.append(T_mult[i])
 
             return [H_tot, ts]
 
-        res = mod_amount(self.word)
+        num_module = 1
+        res = mod_amount(num_module)
 
         # extract out the hamiltonian and the time multiplier from the mod count results 
         multiplier_times = res[1]
@@ -208,8 +238,8 @@ class Module_build():
 
         # Create isometries for qubit 1 and qubit 2 to extend the {g, e} subspace action to the full qubit space
         identity_isometry = (
-            qt.basis(self.dim, 0) * qt.basis(2, 0).dag()
-            + qt.basis(self.dim, 1) * qt.basis(2, 1).dag()
+            qt.basis(dim, 0) * qt.basis(2, 0).dag()
+            + qt.basis(dim, 1) * qt.basis(2, 1).dag()
         )
         identity_isometry = qt.tensor(identity_isometry, identity_isometry)
 
@@ -223,43 +253,49 @@ class Module_build():
         # The extended_iswap_q1_q2 now acts as the desired iSWAP gate on {g, e} of qubits 1 and 2, and as identity on the rest
         desired_U = extended_q1_q2
 
+        self.amp = amp
+
         # build the designed unitary
         # run the fidelity analysis over the expected gate 
-        amps = np.linspace(0,8,100)
-        result = []
+        amps = np.linspace(0, self.amp, 300)
+        results = []
         fids = []
+        i_count = []
 
-        for i in amps:
-            eta = ((2 * wp) / ((wp**2) - (ws**2))) * i
-            Z = []
-            for j in range(len(H)):
-                
-                Z.append(eta * H[j] * multiplier_times[j])
+        # non-optimization cell 
+        eta = ((2 * wp) / ((wp**2) - (ws**2))) * self.amp
+        Z = []
+        Z.clear()
+        for j in range(len(H)):
+            
+            Z.append(eta * H[j] * multiplier_times[j])
 
-            w = sum(Z)
-            U_propagator = (-1j * w).expm()
+        w = sum(Z)
+        U_propagator = (-1j * w).expm()
 
-            # calculate the fidelity
-            fid = np.abs(qt.average_gate_fidelity(desired_U, U_propagator))
-            result.append([i, fid])
-            fids.append(fid)
+        #calculate the fidelity
+        self.fid = np.abs(qt.average_gate_fidelity(desired_U, U_propagator))
+        # results.append([i, fid])
+        # fids.append(fid)
+        # i_count.append(i)
 
-        self.a = max(fids)
+        
+        return None
 
     def results(self):
-        return self.a
+        return self.fid
     
+    def min_gate_sep(self):
+        gate12 = np.abs(self.w1 - self.w2)
+        gate13 = np.abs(self.w1 - self.qubit_3)
+        gate23 = np.abs(self.w2 - self.qubit_3)
 
-class Create_plots():
-    def __init__(self, x, y, num_module):
-        self.x = x
-        self.y = y
-        self.num_module = num_module
-        
-    def plot_create(self):
-        fig, ax = plt.subplots()
-        ax.set_xlabel("power of lambda")
-        ax.set_ylabel("fidelity")
-        ax.set_title("fidelity vs the power of lambda, module number: %s" % self.num_module)
-        ax.plot(self.x, self.y)
-        
+        sep12_13 = np.abs(gate12 - gate13)
+        sep12_23 = np.abs(gate12 - gate23)
+        sep13_23 = np.abs(gate13 - gate23)
+
+        seps = [sep12_13, sep12_23, sep13_23]
+
+        return min(seps)
+
+

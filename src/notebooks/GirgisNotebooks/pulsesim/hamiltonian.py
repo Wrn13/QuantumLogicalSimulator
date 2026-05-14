@@ -8,9 +8,9 @@ from abc import ABC
 
 import numpy as np
 
-from quantum_logical.pulsesim.mode import CavityMode, QuantumMode, SNAILMode
-from quantum_logical.pulsesim.pulse import Pulse
-from quantum_logical.pulsesim.system import QuantumSystem
+from notebooks.GirgisNotebooks.pulsesim.mode import CavityMode, QuantumMode, SNAILMode
+from notebooks.GirgisNotebooks.pulsesim.pulse import Pulse
+from notebooks.GirgisNotebooks.pulsesim.system import QuantumSystem
 
 
 class Hamiltonian(ABC):

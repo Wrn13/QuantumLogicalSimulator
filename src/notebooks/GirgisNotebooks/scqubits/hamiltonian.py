@@ -2,7 +2,7 @@
 
 import abc as ABC
 import numpy as np
-from quantum_logical.scqubits.modes import Modes
+from notebooks.GirgisNotebooks.scqubits.modes import Modes
 import scqubits as scq
 import qutip as qt
 
