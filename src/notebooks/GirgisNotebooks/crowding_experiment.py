@@ -1,9 +1,9 @@
 import numpy as np
 from qutip import Options, ket2dm
 import qutip as qt
-from quantum_logical.pulsesim import QuantumSystem, Pulse
-from quantum_logical.pulsesim.mode import QubitMode, SNAILMode, CavityMode
-from quantum_logical.pulsesim.build_hamiltonian import Build_hamiltonian
+from notebooks.GirgisNotebooks.pulsesim import QuantumSystem, Pulse
+from notebooks.GirgisNotebooks.pulsesim.mode import QubitMode, SNAILMode, CavityMode
+from notebooks.GirgisNotebooks.pulsesim.build_hamiltonian import Build_hamiltonian
 import matplotlib.pyplot as plt
 from itertools import product
 from tqdm.notebook import tqdm

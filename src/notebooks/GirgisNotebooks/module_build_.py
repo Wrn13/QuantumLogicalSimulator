@@ -5,8 +5,8 @@ import numpy as np
 from qutip import Options
 import qutip as qt
 from qutip import ket2dm
-from quantum_logical.pulsesim import QuantumSystem, Pulse
-from quantum_logical.pulsesim.mode import QubitMode, SNAILMode, CavityMode
+from notebooks.GirgisNotebooks.pulsesim import QuantumSystem, Pulse
+from notebooks.GirgisNotebooks.pulsesim.mode import QubitMode, SNAILMode, CavityMode
 import matplotlib.pyplot as plt
 from itertools import product
 from qutip_qip.operations import iswap

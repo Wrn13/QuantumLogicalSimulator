@@ -8,7 +8,7 @@ import numpy as np
 import qutip as qt
 import yaml
 
-from quantum_logical.pulsesim.mode import QuantumMode
+from notebooks.GirgisNotebooks.pulsesim.mode import QuantumMode
 
 
 class QuantumSystem:

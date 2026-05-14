@@ -20,7 +20,7 @@ from qutip import Qobj
 from qutip.states import basis
 from qutip.tensor import tensor
 
-from quantum_logical.encoded_layout import EncodedRegisters
+from notebooks.GirgisNotebooks.encoded_layout import EncodedRegisters
 from quantum_logical.operators import transform_ge_to_gf_gate
 from quantum_logical.qudit_op import QutritUnitary
 

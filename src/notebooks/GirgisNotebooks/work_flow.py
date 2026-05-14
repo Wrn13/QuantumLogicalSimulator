@@ -2,9 +2,9 @@ import numpy as np
 from itertools import product
 import qutip as qt
 import h5py 
-from quantum_logical.pulsesim import QuantumSystem, Pulse
-from quantum_logical.pulsesim.mode import QubitMode, SNAILMode, CavityMode
-from quantum_logical.pulsesim.build_hamiltonian import Build_hamiltonian
+from notebooks.GirgisNotebooks.pulsesim import QuantumSystem, Pulse
+from notebooks.GirgisNotebooks.pulsesim.mode import QubitMode, SNAILMode, CavityMode
+from notebooks.GirgisNotebooks.pulsesim.build_hamiltonian import Build_hamiltonian
 import matplotlib.pyplot as plt
 from qutip.qip.operations import iswap
 

@@ -4,15 +4,12 @@ Contains the main helper functions and a class-based API so notebooks can remain
 """
 from __future__ import annotations
 
-import os
 from typing import List, Tuple
 
-import matplotlib.pyplot as plt
 import numpy as np
-from quantum_logical.gates import hadamard_operator
 import qutip as qt
 
-from quantum_logical.channel import AmplitudeDamping, PhaseDamping, Depolarizing
+from quantum_logical.channel import AmplitudeDamping, PhaseDamping
 from quantum_logical.trotter import TrotterGroup
 
 
