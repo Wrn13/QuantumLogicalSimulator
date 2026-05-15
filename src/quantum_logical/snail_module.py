@@ -1,4 +1,17 @@
+from enum import Enum
 from typing import override
+
+import qutip as qt
+
+from quantum_logical.noisy_gate import NoisyGate
+from weylchamber import gate
+
+
+class Spectator_Types(Enum):
+    Qubit_Qubit = 0,
+    Qubit_SNAIL = 1,
+    SNAIL_Subharmonic = 2,
+    Qubit_Subharmonic = 3
 
 
 class SNAIL_Module():
@@ -18,10 +31,20 @@ class SNAIL_Module():
     eta:float
 
     connectivity:list[tuple[int, int]]
+    """
+    List of connectivity for the SNAIL module
+    """
 
     lambda_q: list[float]
+    """
+    List of hybridizations g_sq/Delta
+    """
 
-    pump_frequencies:dict[tuple[int, int], list[float]]
+    pump_frequencies:dict[tuple[int, int], list[tuple[float, str, float]]]
+    """
+    List of all possible drive frequencies to first order, including qubit qubit drives,
+    snail qubit drives, the snail subharmonic, and the qubit subharmonics.
+    """
 
     def __init__(
         self,
@@ -59,22 +82,21 @@ class SNAIL_Module():
             f_i = self.transmon_frequencies[i]
             f_j = self.transmon_frequencies[j]
             coeff_strength = 3 * self.eta **2 * self.lambda_q[i] * self.lambda_q[j] * self.g3
-            pump_freqs[i,j] = (abs(f_i - f_j), "qubit-qubit", coeff_strength)
-            pump_freqs[j,i] = (abs(f_i - f_j), "qubit-qubit", coeff_strength)
+            pump_freqs[i,j] = (abs(f_i - f_j), Spectator_Types.Qubit_Qubit, coeff_strength)
 
         # Qubit SNAIL interaction
         for i in range(self.num_qubits):
             f_i = self.transmon_frequencies[i]
-            pump_freqs[i,self.num_qubits] = (self.snail_freq - f_i, "qubit-SNAIL", 6 * self.eta * self.lambda_q[i] * self.g3)
+            pump_freqs[i,self.num_qubits] = (self.snail_freq - f_i, Spectator_Types.Qubit_SNAIL, 6 * self.eta * self.lambda_q[i] * self.g3)
 
 
         # Subharmonics
         # SNAIL Subharmonic
-        pump_freqs[self.num_qubits, self.num_qubits] = (self.snail_freq/2, "SNAIL subharmonic", 3 * self.eta **2 * self.g3)
+        pump_freqs[self.num_qubits, self.num_qubits] = (self.snail_freq/2, Spectator_Types.SNAIL_Subharmonic, 3 * self.eta **2 * self.g3)
 
         for i in range(self.num_qubits):
             f_i = self.transmon_frequencies[i]
-            pump_freqs[i,i] = (f_i/2, "qubit subharmonic", 3 * self.eta **2 * self.lambda_q[i]**2 * self.g3)
+            pump_freqs[i,i] = (f_i/2, Spectator_Types.Qubit_Subharmonic, 3 * self.eta **2 * self.lambda_q[i]**2 * self.g3)
 
         self.pump_frequencies = pump_freqs
 
@@ -94,6 +116,66 @@ class SNAIL_Module():
         detuned_gate_freq = self.pump_frequencies[qubit_k, qubit_l]
 
         return abs(target_gate_freq - detuned_gate_freq)
+    
+    def compute_spectator_operator(self, qubit_i:int, qubit_j:int, type:str):
+        """Compute the operator associated  with the given interaction.
+        TODO: Find a way to make amplitude damping from SNAIL drives.
+
+        Args:
+            qubit_i (int): _description_
+            qubit_j (int): _description_
+            type (str): _description_
+
+        Returns:
+            _type_: _description_
+        """
+
+        destroy = qt.destroy(self.hilbert_space_dim)
+        match type:
+            case Spectator_Types.Qubit_Qubit:
+                destroy_i = qt.tensor([destroy if k == qubit_i else qt.qeye(self.hilbert_space_dim) for k in range(self.num_qubits+1)])
+                destroy_j = qt.tensor([destroy if k == qubit_j else qt.qeye(self.hilbert_space_dim) for k in range(self.num_qubits+1)])
+                return destroy_i * destroy_j.dag() + destroy_i.dag() * destroy_j
+            case Spectator_Types.Qubit_SNAIL:
+                destroy_i = qt.tensor([destroy if k == min(qubit_i, qubit_j) else qt.qeye(self.hilbert_space_dim) for k in range(self.num_qubits+1)])
+                destroy_s = qt.tensor([destroy if k == self.num_qubits else qt.qeye(self.hilbert_space_dim) for k in range(self.num_qubits+1)])
+                return destroy_i * destroy_s.dag() +  destroy_i.dag() * destroy_s
+            case Spectator_Types.SNAIL_Subharmonic:
+                destroy_s = qt.tensor([destroy if k == self.num_qubits else qt.qeye(self.hilbert_space_dim) for k in range(self.num_qubits+1)])
+                return destroy_s + destroy_s.dag()
+            case Spectator_Types.Qubit_Subharmonic:
+                destroy_i = qt.tensor([destroy if k == qubit_i else qt.qeye(self.hilbert_space_dim) for k in range(self.num_qubits+1)])
+                return destroy_i + destroy_i.dag()
+
+    def generate_noisy_gate(self, qubit_i:int, qubit_j:int, ideal_gate:qt.Qobj) -> NoisyGate:
+        gate_freq, interaction_type, _ = self.pump_frequencies[qubit_i, qubit_j]
+
+        assert interaction_type == Spectator_Types.Qubit_Qubit, "Currently only supports generating noisy gates for qubit-qubit interactions."
+        coherent_gate_error = qt.Qobj()
+        
+        # Construct the noisy gate using the ideal unitary and the error strength
+        for idx, vals in self.pump_frequencies.items():
+            i = idx[0]
+            j = idx[1]
+            
+            pump_freq = vals[0]
+            spectator_type = vals[1]
+            coeff = vals[2]
+
+
+            delta = abs(gate_freq - pump_freq)
+            #Target gate interaction, not spectator
+            if i == j and i == qubit_i:
+                continue
+
+            coherent_gate_error += 2 * coeff / delta * self.compute_spectator_operator(i, j, spectator_type)
+
+            
+        
+        total_gate = NoisyGate(ideal_gate * coherent_gate_error, self.num_qubits, self.hilbert_space_dim, None, )
+
+
+        return NoisyGate(ideal_unitary, self.num_qubits, self.hilbert_space_dim, kraus_operators, duration, (qubit_i, qubit_j))
     
 
 
@@ -152,3 +234,4 @@ class Two_SNAIL_Module(SNAIL_Module):
         detuned_gate_freq = self.pump_frequencies[qubit_k, qubit_l]
 
         return abs(target_gate_freq - detuned_gate_freq)
+    
