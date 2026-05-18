@@ -1,9 +1,12 @@
 from enum import Enum
 from typing import override
 
+from math import comb
+import numpy as np
 import qutip as qt
 
 from quantum_logical.noisy_gate import NoisyGate
+import scipy as sp
 from weylchamber import gate
 
 
@@ -123,7 +126,6 @@ class SNAIL_Module():
     
     def compute_spectator_operator(self, qubit_i:int, qubit_j:int, type:str) -> qt.Qobj:
         """Compute the operator associated  with the given interaction.
-        TODO: Find a way to make amplitude damping from SNAIL drives.
 
         Args:
             qubit_i (int): _description_
@@ -140,10 +142,38 @@ class SNAIL_Module():
                 destroy_i = qt.tensor([destroy if k == qubit_i else qt.qeye(self.hilbert_space_dim) for k in range(self.num_qubits)])
                 destroy_j = qt.tensor([destroy if k == qubit_j else qt.qeye(self.hilbert_space_dim) for k in range(self.num_qubits)])
                 return destroy_i * destroy_j.dag() + destroy_i.dag() * destroy_j
-            case Spectator_Types.Qubit_SNAIL:
-                destroy_i = qt.tensor([destroy if k == min(qubit_i, qubit_j) else qt.qeye(self.hilbert_space_dim) for k in range(self.num_qubits)])
-                destroy_s = qt.tensor([destroy if k == self.num_qubits else qt.qeye(self.hilbert_space_dim) for k in range(self.num_qubits)])
-                return destroy_i * destroy_s.dag() # Assume SNAIL at |0>
+            
+    def compute_spectator_kraus(self, qubit_i:int, chi:float, dt:float=0.03)->list[qt.Qobj]:
+        """
+        Function to generate the Kraus Operators for an amplitude damping channel
+        based off of a beam splitter interaction Hamiltonian, modeling the environment
+        as another harmonic oscillator. 
+
+        Equation 8.110 in Nielson and Chuang
+
+        Args:
+            qubit_i (_type_): _description_
+            chi (_type_): _description_
+            dt (float, optional): _description_. Defaults to 0.03.
+        """
+        kraus_ops = []
+        gamma = 1-np.cos(chi * dt)**2
+        dim_H = self.hilbert_space_dim
+
+        for k in range(dim_H):
+            E_k_single_data = np.zeros((dim_H,dim_H))
+
+            for n in range(dim_H):
+                E_k_single_data[n-k, n] = np.sqrt(comb(n,k)) * np.sqrt((1-gamma) ** (n-k) * (gamma) ** k)
+            
+            E_k_single = qt.Qobj(E_k_single_data, shape=[dim_H,dim_H])
+
+            #Extend to multiple qubits
+            E_k = qt.tensor([qt.qeye(dim_H) if i != qubit_i else E_k_single for i in range(self.num_qubits)])
+
+            kraus_ops.append(E_k)
+                
+        return kraus_ops
 
     def generate_noisy_gate(self, qubit_i:int, qubit_j:int, ideal_gate:qt.Qobj) -> NoisyGate:
         """
@@ -177,11 +207,14 @@ class SNAIL_Module():
 
 
             delta = abs(gate_freq - pump_freq)
-            #Target gate interaction, not spectator
+            #Target gate interaction, not spectator, do not care
             if i == j and i == qubit_i:
                 continue
 
-            coherent_gate_error += 2 * coeff / delta * self.compute_spectator_operator(i, j, spectator_type)
+            if spectator_type == Spectator_Types.Qubit_Qubit:
+                coherent_gate_error += 2 * coeff / delta * self.compute_spectator_operator(i, j, spectator_type)
+            elif spectator_type == Spectator_Types.Qubit_SNAIL:
+                kraus_operators.extend(self.compute_spectator_kraus(min(i, j), 2 * coeff / delta, dt = 0.03))
 
         spectator_gate = coherent_gate_error.expm()
             
