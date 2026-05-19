@@ -4,7 +4,7 @@ from typing import Iterable
 
 import numpy as np
 from quantum_logical.noisy_gate import NoisyGate
-from qutip import Qobj
+from qutip import Qobj, fidelity
 from scipy.linalg import fractional_matrix_power
 
 from quantum_logical.channel import Channel, CPTPMap
@@ -57,14 +57,17 @@ class TrotterGroup:
         """
         # convert into numpy ndarray
         state_numpy = state.full() if isinstance(state, Qobj) else state
-
-        gate_kraus = None
+        
+        one_shot_ops = []
+        per_step_ops = list(self.continuous_operators)
         if isinstance(discrete_unitary, NoisyGate):
-            gate_kraus = discrete_unitary.kraus_operators
-            # If the caller didn't pass a duration, take it from the gate.
+            for ch in discrete_unitary.channels:
+                if getattr(ch, "is_one_shot", False):
+                    one_shot_ops.append(ch)
+                else:
+                    per_step_ops.append(ch)
             if duration is None:
                 duration = discrete_unitary.duration
-
             discrete_unitary = discrete_unitary.unitary
 
         if discrete_unitary is not None and not Qobj(discrete_unitary).isunitary:
@@ -73,16 +76,23 @@ class TrotterGroup:
             discrete_unitary = discrete_unitary.full()
 
         # Dimensionality check for state
-        if state.shape != self.continuous_operators[0]._E[0].shape:
+        ref_op = per_step_ops[0] if per_step_ops else (one_shot_ops[0] if one_shot_ops else None)
+        if ref_op is not None and state.shape != ref_op._E[0].shape:
             raise ValueError(
                 "State dimensions do not match the operators in TrotterGroup."
             )
 
         num_steps = int(duration / self.trotter_dt)
         
+        def apply_one_shots(rho):
+            for channel in one_shot_ops:
+                rho = channel(rho)
+            return rho
+
         if num_steps == 0:
             if discrete_unitary is not None:
                 return Qobj(discrete_unitary @ state_numpy @ discrete_unitary.T.conj())
+            state_numpy = apply_one_shots(state_numpy)
             return [state]
 
         fractional_unitary = None
@@ -104,11 +114,9 @@ class TrotterGroup:
                     fractional_unitary @ state_numpy @ fractional_unitary.T.conj()
                 )
             states.append(Qobj(state_numpy, dims=state.dims) / np.trace(state_numpy))
-        
-        # Apply the time independent channel corresponding to the gate error at the end.
-        if gate_kraus is not None and states:
-            final_numpy = sum(E @ state_numpy @ E.conj().T for E in gate_kraus)
-            states[-1] = Qobj(final_numpy, dims=state.dims) / np.trace(final_numpy)
-            state_numpy = final_numpy
+            
+        state_numpy = apply_one_shots(state_numpy)
+
+        states[-1] = Qobj(state_numpy, dims = state.dims) / np.trace(state_numpy)
         # return Qobj(state_numpy, dims=state.dims) / np.trace(state_numpy)
         return states

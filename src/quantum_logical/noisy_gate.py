@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Optional
 
-import numpy as np
 from qutip import Qobj
+
+from quantum_logical.channel import Channel
 
 
 @dataclass
@@ -35,20 +36,12 @@ class NoisyGate:
     unitary: Qobj
     num_qubits: int
     hilbert_space_dim: int
-    kraus_operators: Optional[List[Qobj]]
+    channels: list[Channel]
     duration: float
     qubit_pair: Optional[tuple[int, int]] = None
 
     def __post_init__(self):
         if not Qobj(self.unitary).isunitary:
             raise ValueError("NoisyGate.unitary must be unitary.")
-        D = self.unitary.shape[0]
-        completeness = sum(E.dag() @ E for E in self.kraus_operators)
-        if not np.allclose(completeness, np.eye(D), atol=1e-6):
-            raise ValueError(
-                "Kraus operators do not satisfy sum_k E_k^dag E_k = I."
-            )
-
-    def apply_kraus(self, rho: np.ndarray) -> np.ndarray:
-        return sum(E @ rho @ E.dag() for E in self.kraus_operators)
+       
     

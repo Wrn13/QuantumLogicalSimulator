@@ -1,13 +1,11 @@
 from enum import Enum
-from typing import override
-
 from math import comb
+
 import numpy as np
+from quantum_logical.channel import Channel, SpectatorSNAILLoss
 import qutip as qt
 
 from quantum_logical.noisy_gate import NoisyGate
-import scipy as sp
-from weylchamber import gate
 
 
 class Spectator_Types(Enum):
@@ -78,8 +76,8 @@ class SNAIL_Module():
          
         self.connectivity = connectivity
 
-        self.generate_hybridization()
-        self.generate_pump_frequencies()
+        self._compute_hybridization()
+        self._generate_pump_frequencies()
 
 
     def _generate_pump_frequencies(self):
@@ -88,7 +86,7 @@ class SNAIL_Module():
         from Specator Aware Frequency Allocation paper by McKinney et al. 
         24 Sep 2025, https://arxiv.org/pdf/2409.18262
         """
-        pump_freqs = []
+        pump_freqs = dict()
 
         # Qubit Qubit interactions
         for i, j in self.connectivity:
@@ -105,13 +103,13 @@ class SNAIL_Module():
 
         self.pump_frequencies = pump_freqs
 
-    def compute_hybridization(self):
+    def _compute_hybridization(self):
         """Computes hybridization strenght lambda_q = g_sq/Delta for each qubit."""
         lambda_q = []
         for i in range(self.num_qubits):
             f_i = self.transmon_frequencies[i]
             detuning = abs(f_i - self.snail_freq)
-            hybridization_strength = self.g_sq / detuning
+            hybridization_strength = self.g_sq[i] / detuning
             lambda_q.append(hybridization_strength)
         
         self.lambda_q = lambda_q
@@ -119,8 +117,8 @@ class SNAIL_Module():
 
     def compute_gate_detuning(self, qubit_i, qubit_j, qubit_k, qubit_l):
         """ Computes lowercase delta the difference in pump frequencies"""
-        target_gate_freq = self.pump_frequencies[qubit_i, qubit_j]
-        detuned_gate_freq = self.pump_frequencies[qubit_k, qubit_l]
+        target_gate_freq = self.pump_frequencies[qubit_i, qubit_j][0]
+        detuned_gate_freq = self.pump_frequencies[qubit_k, qubit_l][0]
 
         return abs(target_gate_freq - detuned_gate_freq)
     
@@ -143,39 +141,18 @@ class SNAIL_Module():
                 destroy_j = qt.tensor([destroy if k == qubit_j else qt.qeye(self.hilbert_space_dim) for k in range(self.num_qubits)])
                 return destroy_i * destroy_j.dag() + destroy_i.dag() * destroy_j
             
-    def compute_spectator_kraus(self, qubit_i:int, chi:float, dt:float=0.03)->list[qt.Qobj]:
-        """
-        Function to generate the Kraus Operators for an amplitude damping channel
-        based off of a beam splitter interaction Hamiltonian, modeling the environment
-        as another harmonic oscillator. 
+    def compute_spectator_snail_loss_channel(
+        self, qubit_i: int, chi: float, gate_duration: float
+    ) -> Channel:
+        return SpectatorSNAILLoss(
+            chi=chi,
+            gate_duration=gate_duration,
+            qubit_index=qubit_i,
+            num_qubits=self.num_qubits,
+            hilbert_space_dim=self.hilbert_space_dim,
+        )
 
-        Equation 8.110 in Nielson and Chuang
-
-        Args:
-            qubit_i (_type_): _description_
-            chi (_type_): _description_
-            dt (float, optional): _description_. Defaults to 0.03.
-        """
-        kraus_ops = []
-        gamma = 1-np.cos(chi * dt)**2
-        dim_H = self.hilbert_space_dim
-
-        for k in range(dim_H):
-            E_k_single_data = np.zeros((dim_H,dim_H))
-
-            for n in range(dim_H):
-                E_k_single_data[n-k, n] = np.sqrt(comb(n,k)) * np.sqrt((1-gamma) ** (n-k) * (gamma) ** k)
-            
-            E_k_single = qt.Qobj(E_k_single_data, shape=[dim_H,dim_H])
-
-            #Extend to multiple qubits
-            E_k = qt.tensor([qt.qeye(dim_H) if i != qubit_i else E_k_single for i in range(self.num_qubits)])
-
-            kraus_ops.append(E_k)
-                
-        return kraus_ops
-
-    def generate_noisy_gate(self, qubit_i:int, qubit_j:int, ideal_gate:qt.Qobj) -> NoisyGate:
+    def generate_noisy_gate(self, qubit_i:int, qubit_j:int, ideal_gate:qt.Qobj, duration:float) -> NoisyGate:
         """
         Generates a noisy 2 qubit gate based on the ideal gate, the system parameters, and the desired interaction qubits.
         
@@ -189,13 +166,16 @@ class SNAIL_Module():
         :return: Description
         :rtype: NoisyGate
         """
+
         gate_freq, interaction_type, _ = self.pump_frequencies[qubit_i, qubit_j]
 
         assert interaction_type == Spectator_Types.Qubit_Qubit, "Currently only supports generating noisy gates for qubit-qubit interactions."
-        coherent_gate_error = qt.Qobj()
         
-        kraus_operators = []
-
+        channels = []
+        coherent_gate_error = qt.Qobj(
+            np.zeros(ideal_gate.shape, dtype=complex),
+            dims=ideal_gate.dims,
+        )
         # Construct the noisy gate using the ideal unitary and the error strength
         for idx, vals in self.pump_frequencies.items():
             i = idx[0]
@@ -208,66 +188,110 @@ class SNAIL_Module():
 
             delta = abs(gate_freq - pump_freq)
             #Target gate interaction, not spectator, do not care
-            if i == j and i == qubit_i:
+            if (i, j) == (qubit_i, qubit_j):
                 continue
 
             if spectator_type == Spectator_Types.Qubit_Qubit:
                 coherent_gate_error += 2 * coeff / delta * self.compute_spectator_operator(i, j, spectator_type)
             elif spectator_type == Spectator_Types.Qubit_SNAIL:
-                kraus_operators.extend(self.compute_spectator_kraus(min(i, j), 2 * coeff / delta, dt = 0.03))
+                channels.append(self.compute_spectator_snail_loss_channel(min(i, j), 2 * coeff / delta, gate_duration=duration))
 
-        spectator_gate = coherent_gate_error.expm()
-            
-        total_gate = NoisyGate(ideal_gate * spectator_gate, self.num_qubits, self.hilbert_space_dim, kraus_operators, 0, (qubit_i, qubit_j))
+        spectator_gate = qt.Qobj(-1j*coherent_gate_error, dims= ideal_gate.dims).expm()
+        
+        print("Spectator infidelity: ", 1-qt.average_gate_fidelity(spectator_gate, qt.tensor([qt.qeye(2)]*self.num_qubits)))
+        total_gate = NoisyGate(unitary = ideal_gate * spectator_gate, num_qubits= self.num_qubits, hilbert_space_dim=self.hilbert_space_dim, channels=channels, qubit_pair= (qubit_i, qubit_j), duration=duration)
 
         return total_gate
     
+    def generate_parallel_noisy_gate(
+        self,
+        gate_specs: list[tuple[int, int, qt.Qobj]],
+        dt: float = 0.03,
+    ) -> NoisyGate:
+        """
+        Generate a NoisyGate for one or more simultaneous 2-qubit gates.
+
+        `gate_specs` entries are (qubit_i, qubit_j, ideal_gate), with
+        `ideal_gate` embedded in the full N-qubit Hilbert space. All pairs
+        must (i) be qubit-qubit pump entries and (ii) be on disjoint qubits.
+
+        Each pump's on-resonant drive is absorbed into its ideal unitary;
+        every other Table-1 transition (including the targets of OTHER
+        active pumps) contributes a 2 c_s / |f_p - f_s| spectator term.
+        """
+        if not gate_specs:
+            raise ValueError("gate_specs must be non-empty")
+
+        # ---- validation ----
+        used = set()
+        active_pairs: list[tuple[int, int]] = []
+        for qi, qj, _ in gate_specs:
+            key = (qi, qj) if (qi, qj) in self.pump_frequencies else (qj, qi)
+            if key not in self.pump_frequencies:
+                raise KeyError(f"No pump entry for pair ({qi},{qj})")
+            if self.pump_frequencies[key][1] != Spectator_Types.Qubit_Qubit:
+                raise ValueError(f"Pair {key} is not a qubit-qubit interaction")
+            if used & {qi, qj}:
+                raise ValueError(f"Qubit re-use in parallel set: {qi},{qj}")
+            used.update({qi, qj})
+            active_pairs.append(key)
+
+        active_pumps = [
+            (qi, qj, self.pump_frequencies[qi, qj][0]) for qi, qj in active_pairs
+        ]
+
+        # ---- combined ideal unitary (commutes pairwise: disjoint supports) ----
+        combined_ideal = gate_specs[0][2]
+        for _, _, U in gate_specs[1:]:
+            combined_ideal = U * combined_ideal
+
+        # ---- accumulate spectator coherent error and incoherent channels ----
+        coherent_gate_error = qt.Qobj(
+            np.zeros(combined_ideal.shape, dtype=complex),
+            dims=combined_ideal.dims,
+        )
+        channels: list[Channel] = []
+
+        for spec_idx, (f_s, spec_type, c_s) in self.pump_frequencies.items():
+            for active_qi, active_qj, f_p in active_pumps:
+                # absorb pump p's own on-resonant target into the ideal unitary
+                if spec_idx == (active_qi, active_qj):
+                    continue
+
+                delta = abs(f_p - f_s)
+                if delta < 1e-9:
+                    # frequency collision: parallelizing these gates is unphysical
+                    raise ValueError(
+                        f"Near-degenerate pump for active {(active_qi, active_qj)} "
+                        f"and spectator {spec_idx}: delta={delta:.3e}"
+                    )
+                strength = 2 * c_s / delta
+
+                if spec_type == Spectator_Types.Qubit_Qubit:
+                    i, j = spec_idx
+                    coherent_gate_error += strength * self.compute_spectator_operator(
+                        i, j, spec_type
+                    )
+                elif spec_type == Spectator_Types.Qubit_SNAIL:
+                    qubit = min(spec_idx)  # (qubit_index, num_qubits)
+                    channels.append(
+                        self.compute_spectator_snail_loss_channel(
+                            qubit, strength, dt=dt
+                        )
+                    )
+
+        spectator_gate = (-1j * coherent_gate_error).expm()
+
+        return NoisyGate(
+            combined_ideal * spectator_gate,
+            self.num_qubits,
+            self.hilbert_space_dim,
+            channels,
+            0,
+            tuple(active_pairs),
+        )
 
 
-# TODO: Implement code for 2 module systems.
-class Two_SNAIL_Module(SNAIL_Module):
-    snail_freq_2:float
+    #def generate_noisy_gate(self, qubit_i, qubit_j, ideal_gate):
+    #    return self.generate_parallel_noisy_gate([(qubit_i, qubit_j, ideal_gate)])
 
-    def __init__(self, num_qubits = 2, hilbert_space_dim = 2, snail_freq = 5, snail_freq_2 = 6, transmon_frequencies = None, lambda_q = None, alpha_q = None, g3 = 0.06, eta = 1.8, connectivity = None):
-        self.snail_freq_2 = snail_freq_2
-        super().__init__(num_qubits, hilbert_space_dim, snail_freq, transmon_frequencies, lambda_q, alpha_q, g3, eta, connectivity)
-
-        self.pump_frequencies[self.num_qubits+1, self.num_qubits+1] = (self.snail_freq_2/2, 3 * self.eta **2 * self.lambda_q[0] * self.lambda_q)
-
-    @override
-    def _generate_pump_frequencies(self):
-        pump_freqs = []
-
-        # Qubit Qubit interactions
-        for i, j in self.connectivity:
-            f_i = self.transmon_frequencies[i]
-            f_j = self.transmon_frequencies[j]
-            coeff_strength = 3 * self.eta **2 * self.lambda_q[i] * self.lambda_q[j] * self.g3
-            pump_freqs[i,j] = (abs(f_i - f_j), "qubit-qubit", coeff_strength)
-            pump_freqs[j,i] = (abs(f_i - f_j), "qubit-qubit", coeff_strength)
-
-        # Qubit SNAIL interaction
-        for i in range(self.num_qubits):
-            f_i = self.transmon_frequencies[i]
-            pump_freqs[i,self.num_qubits] = (self.snail_freq - f_i, "qubit-SNAIL", 6 * self.eta * self.lambda_q[i] * self.g3)
-
-        self.pump_frequencies = pump_freqs
-
-    @override
-    def compute_hybridization(self):
-        lambda_q = []
-        for i in range(self.num_qubits):
-            f_i = self.transmon_frequencies[i]
-            detuning = abs(f_i - self.snail_freq)
-            hybridization_strength = self.g_sq / detuning
-            lambda_q.append(hybridization_strength)
-        
-        self.lambda_q = lambda_q
-        
-    @override
-    def compute_gate_detuning(self, qubit_i, qubit_j, qubit_k, qubit_l):
-        target_gate_freq = self.pump_frequencies[qubit_i, qubit_j]
-        detuned_gate_freq = self.pump_frequencies[qubit_k, qubit_l]
-
-        return abs(target_gate_freq - detuned_gate_freq)
-    

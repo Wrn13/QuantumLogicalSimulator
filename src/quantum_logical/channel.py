@@ -1,6 +1,7 @@
 """Error channels for quantum systems."""
 
 from abc import ABC, abstractmethod
+from math import comb
 from typing import List, Union
 
 import numpy as np
@@ -44,6 +45,7 @@ class CPTPMap(ABC):
 
 class Channel(CPTPMap):
     """Base class for quantum error channels."""
+    is_one_shot = False
 
     def __init__(self, num_qubits, hilbert_space_dim, **kwargs):
         super().__init__(dims=hilbert_space_dim**num_qubits)
@@ -237,4 +239,50 @@ class PhaseDamping(Channel):
             raise NotImplementedError("Unsupported Hilbert space dimension.")
         
 
+class SpectatorSNAILLoss(Channel):
+    """Binomial amplitude damping from a beam-splitter coupling to a
+    harmonic environment (Nielsen & Chuang Eq. 8.110), applied once over
+    the full gate duration. Independent of the TrotterGroup step size."""
 
+    is_one_shot = True   # marker read by TrotterGroup.apply
+
+    def __init__(self, chi, gate_duration, qubit_index, num_qubits, hilbert_space_dim):
+        if not 0 <= qubit_index < num_qubits:
+            raise ValueError(f"qubit_index {qubit_index} out of range")
+        self.qubit_index = qubit_index
+        self.gate_duration = gate_duration
+        super().__init__(num_qubits, hilbert_space_dim, chi=chi)
+        self._init_kraus_operators()   # build now; we know T_gate
+
+    def set_trotter_dt(self, trotter_dt):
+        """No-op: one-shot channel, fixed at construction."""
+        return True
+
+    def _create_single_qubit_operators(self, chi):
+        gamma = np.sin(chi * self.gate_duration) ** 2
+        dim = self.hilbert_space_dim
+        kraus = []
+        for k in range(dim):
+            E_k = np.zeros((dim, dim), dtype=complex)
+            for n in range(k, dim):
+                E_k[n - k, n] = np.sqrt(comb(n, k)) * np.sqrt(
+                    (1.0 - gamma) ** (n - k) * gamma ** k
+                )
+            kraus.append(E_k)
+        return kraus
+
+    def _init_kraus_operators(self):
+        chi = self.params["chi"][self.qubit_index]
+        single = self._create_single_qubit_operators(chi=chi)
+
+        identity = qeye(self.hilbert_space_dim)
+        embedded = []
+        for op in single:
+            ops = [identity] * self.num_qubits
+            ops[self.qubit_index] = Qobj(op)
+            embedded.append(np.asarray(tensor(*ops).full(), dtype=complex))
+
+        self._E_per_qubit = [embedded]
+        self._E = list(embedded)
+        self._verify_completeness()
+        return self._E

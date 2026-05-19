@@ -1,8 +1,8 @@
-import numpy as np
 import qutip as qt
+
 from quantum_logical.gates import cnot_operator, hadamard_operator
-from src.quantum_logical.noisy_gate import NoisyGate
-from src.quantum_logical.snail_module import SNAIL_Module
+from quantum_logical.snail_module import SNAIL_Module
+
 
 def qubit_partial_phase_circuit(single_qudit_time: float, two_qudit_time: float, target_state: int = 0):
     circuit = []
@@ -100,8 +100,8 @@ def noisy_qubit_partial_phase_circuit(single_qudit_time: float, two_qudit_time: 
     cnot_1 = cnot_operator(num_qudits=N, dim=2, control_idx=target_state, target_idx=3, trigger=1)
     cnot_2 = cnot_operator(num_qudits=N, dim=2, control_idx=1+target_state, target_idx=3, trigger=1)
 
-    circuit.append(module.generate_noisy_gate(target_state, 3, cnot_1))
-    circuit.append(module.generate_noisy_gate(target_state+1, 3, cnot_2))
+    circuit.append(module.generate_noisy_gate(target_state, 3, cnot_1, two_qudit_time))
+    circuit.append(module.generate_noisy_gate(target_state+1, 3, cnot_2, two_qudit_time))
     gate_time.extend([two_qudit_time] * 2)
 
     # Hadamard layer

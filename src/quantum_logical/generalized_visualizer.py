@@ -47,24 +47,24 @@ N_DATA = 3           # logical data qubits (first three positions in the tensor)
 PROTOCOLS = {
     "no correction":         "arr_0",
     "4-qubit (sequential)":  "arr_1",
-    "5-qubit (parallel)":    "arr_2",
+#    "5-qubit (parallel)":    "arr_2",
 }
 
 PROTOCOL_COLOR = {
     "no correction":         "#666666",
     "4-qubit (sequential)":  "#0072B2",
-    "5-qubit (parallel)":    "#D55E00",
+#    "5-qubit (parallel)":    "#D55E00",
 }
 
 # Logical-state palette (Wong, Nature Methods 8, 441 (2011))
 STATE_ORDER = ["0", "1", "+", "-", "i", "-i"]
 STATE_LABELS = {
-    "0":  r"$|0\rangle_L$",
-    "1":  r"$|1\rangle_L$",
-    "+":  r"$|+\rangle_L$",
-    "-":  r"$|-\rangle_L$",
-    "i":  r"$|{+i}\rangle_L$",
-    "-i": r"$|{-i}\rangle_L$",
+    "0":  r"$|+++\rangle$",
+    "1":  r"$|---\rangle$",
+    "+":  r"$|+++\rangle + |---\rangle$",
+    "-":  r"$|+++\rangle - |---\rangle$",
+    "i":  r"$|+++\rangle + i|---\rangle$",
+    "-i": r"$|+++\rangle - i|---\rangle$",
 }
 PALETTE = {
     "0":  "#0072B2", "1":  "#56B4E9",
@@ -413,6 +413,7 @@ def plot_protocol_comparison(
     fig.tight_layout()
     if save_path is not None:
         fig.savefig(save_path, bbox_inches="tight", dpi=200)
+        fig.savefig(save_path.with_suffix(".png"), bbox_inches="tight", dpi=200)
     return fig, axes
 
 
@@ -693,16 +694,16 @@ def plot_haar_consistency(
 # Driver
 # =============================================================================
 
-def main(root: Path = Path("data"), out_dir: Path = Path("plots")):
+def main(root: Path = Path("data"), out_dir: Path = Path("plots/bad")):
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # 1. Integrity check first --- prints which files are corrupted
-    validate_files(root / "key_initial_states")
+    validate_files(root / "bad_freq_allocation_results")
     # validate_files(root / "haar_random_states")
 
     # 2. Load (skips corrupted files automatically with warnings)
     print("\n=== Loading key states ===")
-    key = load_dataset(root / "key_initial_states", verbose=True)
+    key = load_dataset(root / "bad_freq_allocation_results", verbose=True)
     print(f"Loaded {len(key)} key records")
 
     # print("\n=== Loading Haar states ===")
@@ -712,7 +713,7 @@ def main(root: Path = Path("data"), out_dir: Path = Path("plots")):
     # 3. Main result: protocol comparison
     if key:
         plot_protocol_comparison(
-            key, save_path=out_dir / "protocol_comparison.pdf"
+            key, save_path=out_dir / "protocol_comparison.pdf", ylim=[1e-3, 1]
         )
 
         # 4. Per-state breakdown for every (iter, T2) combination
@@ -723,15 +724,17 @@ def main(root: Path = Path("data"), out_dir: Path = Path("plots")):
                 plot_per_state_breakdown(
                     key, n_iter=n_iter, T2=T2,
                     save_path=out_dir / f"per_state_{n_iter}iter_T2_{T2}.pdf",
+                    ylim=[1e-3, 1]
                 )
 
         # 4b. States-by-protocol: |0>_L, |1>_L, |+>_L compared across schemes
         for n_iter in iters:
             for T2 in T2s:
                 plot_states_by_protocol(
-                    key, states=("0", "1", "+"),
+                    key, states=("0", "1", "+", "i"),
                     n_iter=n_iter, T2=T2,
                     save_path=out_dir / f"states_by_protocol_{n_iter}iter_T2_{T2}.pdf",
+                    ylim=[1e-3, 1]
                 )
 
     # # 5. Haar/6-state consistency (one plot per (iter, T2))
