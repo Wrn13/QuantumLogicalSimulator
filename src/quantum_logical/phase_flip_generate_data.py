@@ -1,19 +1,15 @@
 # Import the compact ExperimentRunner and required libs
-import os
-from pathlib import Path
-from typing import List
-
-import matplotlib.pyplot as plt
 import numpy as np
 import qutip as qt
 
-from quantum_logical.channel import AmplitudeDamping
 from quantum_logical.experiment_runner import ExperimentRunner
 from quantum_logical.qubit_phase import (
+    noisy_qubit_parallel_phase_circuit,
+    noisy_qubit_partial_phase_circuit,
     qubit_parallel_phase_circuit,
     qubit_partial_phase_circuit,
 )
-from quantum_logical.trotter import TrotterGroup
+from quantum_logical.snail_module import SNAIL_Module
 
 
 def single_run_n_iterations(n:int, init_state:qt.Qobj, T1:float, T2:float, single_qubit_time:float, two_qubit_time:float, runner:ExperimentRunner, filename:str):
@@ -27,6 +23,42 @@ def single_run_n_iterations(n:int, init_state:qt.Qobj, T1:float, T2:float, singl
     setup_4 = [
     qubit_partial_phase_circuit(single_qubit_time, two_qubit_time, target_state = 0),
     qubit_partial_phase_circuit(single_qubit_time, two_qubit_time, target_state = 1),
+    ] * n
+
+    trotter_4 = runner.generate_trotterizer(0.03, T1, T2, 2, 4)
+    trotter_5 = runner.generate_trotterizer(0.03, T1, T2, 2, 5)
+    ancilla_zero = qt.ket2dm(qt.basis(2, 0))
+    state_list_4 = runner.experiment_partial_run(trotter_4, qt.tensor(init_rho, ancilla_zero), setup_4)
+    state_list_5 = runner.experiment_partial_run(trotter_5, qt.tensor(init_rho, ancilla_zero, ancilla_zero), setup_5)
+
+    ideal_dropped_states_4 = [qt.tensor(init_rho, ancilla_zero)]
+    ideal_dropped_states_5 = [qt.tensor(init_rho, ancilla_zero, ancilla_zero)]
+    ideal_dropped_states_4 = runner.run_unitary_circuit(trotter_4, [qt.tensor(*[qt.qeye(2)]*4)], state_list_4[0], [37 * single_qubit_time])[:-1]
+    ideal_dropped_states_5 = runner.run_unitary_circuit(trotter_5, [qt.tensor(*[qt.qeye(2)]*5)], state_list_5[0], [19 * single_qubit_time])[:-1]
+    ideal_dropped_states_4.append(state_list_4[37])
+    ideal_dropped_states_5.append(state_list_5[19])
+    for i in range(1,n):
+        ideal_dropped_states_4 += runner.run_unitary_circuit(trotter_4, [qt.tensor(*[qt.qeye(2)]*4)], state_list_4[37 * i], [37 * single_qubit_time])[1:-1]
+        ideal_dropped_states_4.append(state_list_4[37*(i+1)])
+    for i in range(1,int(37/19*n)):
+        ideal_dropped_states_5 += runner.run_unitary_circuit(trotter_5, [qt.tensor(*[qt.qeye(2)]*5)], state_list_5[19 * i], [19 * single_qubit_time])[1:-1]
+        ideal_dropped_states_5.append(state_list_5[19*(i+1)])
+    
+    no_correction = runner.run_unitary_circuit(trotter_4, [qt.tensor(*[qt.qeye(2)]*4)], qt.tensor(init_rho, ancilla_zero), [len(ideal_dropped_states_4) * single_qubit_time]) [:-1]  
+
+    np.savez(filename, no_correction, ideal_dropped_states_4, ideal_dropped_states_5)
+
+def noisy_single_run_n_iterations(n:int, init_state:qt.Qobj, T1:float, T2:float, single_qubit_time:float, two_qubit_time:float, runner:ExperimentRunner, filename:str, module_4:SNAIL_Module, module_5:SNAIL_Module):
+
+    init_rho = qt.ket2dm(init_state)
+
+    setup_5 = [
+        noisy_qubit_parallel_phase_circuit(single_qubit_time, two_qubit_time, num_ancillae=2, module=module_5)
+    ] * int(37/19*n)
+
+    setup_4 = [
+        noisy_qubit_partial_phase_circuit(single_qubit_time, two_qubit_time, target_state = 0, module=module_4),
+        noisy_qubit_partial_phase_circuit(single_qubit_time, two_qubit_time, target_state = 1, module=module_4),
     ] * n
 
     trotter_4 = runner.generate_trotterizer(0.03, T1, T2, 2, 4)
@@ -81,22 +113,51 @@ def main():
     
     runner = ExperimentRunner()
 
-    T1_list = [100]
-    T2_list = [100]
+    T1_list = [280]
+    T2_list = [330]
 
     initial_states = [zero_logical, one_logical, plus_logical, minus_logical, i_logical, minus_i_logical]
     
     initial_state_names = ["0", "1", "+", "-", "i", "-i" ]
 
+
+    four_q_freqs = [3.42000642, 5.69704145, 5.4569939, 3.3]
+    four_q_snail_freq = 4.416635225695616
+    n_4_edge_list = [
+        (0, 1),
+        (0, 3),
+        (1, 3),
+        (1, 2),
+        (2, 3),
+    ]
+    g_sq_4 = (0.08 * (np.abs(np.array(four_q_freqs) - four_q_snail_freq))).tolist()
+    alpha_q_4 = [0.12] * 4
+
+    five_q_freqs = [4.11021317, 5.3651897, 5.60577712, 3.98962617, 3.86956533]
+    five_q_snail_freq = 4.685123575007038
+    n_5_edge_list = [
+        (0, 1),
+        (1, 2),
+        (2, 4),
+        (0, 3),
+        (1, 3),
+        (1, 4)
+    ]
+    g_sq_5 = (0.08 * (np.abs(np.array(five_q_freqs) - five_q_snail_freq))).tolist()
+    alpha_q_5 = [0.12] * 5
+    module_4 = SNAIL_Module(4, 2, four_q_snail_freq, four_q_freqs, g_sq_4, alpha_q_4, connectivity=n_4_edge_list)
+    module_5 = SNAIL_Module(5, 2, five_q_snail_freq, five_q_freqs, g_sq_5, alpha_q_5, connectivity=n_5_edge_list)
+
+    
     print("Running orthogonal states:")
     for T1,T2 in zip(T1_list, T2_list):
         for initial_state, initial_state_name in zip(initial_states, initial_state_names):
             for n in [12, 600]:
                 print(f"Running {n} iterations of T1 = {T1}, T2 = {T2} for starting state {initial_state_name}")
 
-                filename = f"data/key_initial_states/{n}_itr_T1_{T1}_T2_{T2}_{initial_state_name}.npz"
+                filename = f"data/noisy_initial_states/{n}_itr_T1_{T1}_T2_{T2}_{initial_state_name}.npz"
                 try:
-                    single_run_n_iterations(n, initial_state, T1, T2, single_qubit_time, two_qubit_time, runner, filename)
+                    noisy_single_run_n_iterations(n, initial_state, T1, T2, single_qubit_time, two_qubit_time, runner, filename, module_4, module_5)
                 except Exception as e:
                     print("ERROR: Got ", e)
                     continue

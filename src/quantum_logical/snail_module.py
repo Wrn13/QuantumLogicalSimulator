@@ -206,7 +206,7 @@ class SNAIL_Module():
     def generate_parallel_noisy_gate(
         self,
         gate_specs: list[tuple[int, int, qt.Qobj]],
-        dt: float = 0.03,
+        duration: float = 0.03,
     ) -> NoisyGate:
         """
         Generate a NoisyGate for one or more simultaneous 2-qubit gates.
@@ -276,18 +276,19 @@ class SNAIL_Module():
                     qubit = min(spec_idx)  # (qubit_index, num_qubits)
                     channels.append(
                         self.compute_spectator_snail_loss_channel(
-                            qubit, strength, dt=dt
+                            qubit, strength, gate_duration=duration
                         )
                     )
 
         spectator_gate = (-1j * coherent_gate_error).expm()
-
+        
+        print("Spectator infidelity: ", 1-qt.average_gate_fidelity(spectator_gate, qt.tensor([qt.qeye(2)]*self.num_qubits)))
         return NoisyGate(
             combined_ideal * spectator_gate,
             self.num_qubits,
             self.hilbert_space_dim,
             channels,
-            0,
+            duration,
             tuple(active_pairs),
         )
 

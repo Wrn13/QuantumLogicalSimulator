@@ -145,9 +145,14 @@ def noisy_qubit_parallel_phase_circuit(single_qudit_time: float, two_qudit_time:
     circuit.append(qt.tensor(H, H, H, *([qt.qeye(2)] * num_ancillae)))
     gate_time.append(single_qudit_time)
 
+    cnot_0 = cnot_operator(num_qudits=N, dim=2, control_idx=0, target_idx=3, trigger=1)
+    cnot_1 = cnot_operator(num_qudits=N, dim=2, control_idx=1, target_idx=4, trigger=1)
+    cnot_2 = cnot_operator(num_qudits=N, dim=2, control_idx=1, target_idx=3, trigger=1)
+    cnot_3 = cnot_operator(num_qudits=N, dim=2, control_idx=2, target_idx=4, trigger=1)
+
     # CNOT Layer
-    circuit.append(cnot_operator(num_qudits=N, dim=2, control_idx=0, target_idx=3, trigger=1) *cnot_operator(num_qudits=N, dim=2, control_idx=1, target_idx=4, trigger=1))
-    circuit.append(cnot_operator(num_qudits=N, dim=2, control_idx=1, target_idx=3, trigger=1) * cnot_operator(num_qudits=N, dim=2, control_idx=2, target_idx=4, trigger=1))
+    circuit.append(module.generate_parallel_noisy_gate([(0,3,cnot_0), (1,4, cnot_1)], two_qudit_time))
+    circuit.append(module.generate_parallel_noisy_gate([(1,3,cnot_2), (2,4, cnot_3)], two_qudit_time))
     gate_time.extend([two_qudit_time] * 2)
 
     # Hadamard layer

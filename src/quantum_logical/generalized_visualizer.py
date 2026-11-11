@@ -26,15 +26,13 @@ from __future__ import annotations
 
 import re
 import sys
-import warnings
-from dataclasses import dataclass
-from pathlib import Path
 from typing import Iterable
+import warnings
+from pathlib import Path
 
-import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
-
+import numpy as np
 
 # =============================================================================
 # Configuration
@@ -47,13 +45,22 @@ N_DATA = 3           # logical data qubits (first three positions in the tensor)
 PROTOCOLS = {
     "no correction":         "arr_0",
     "4-qubit (sequential)":  "arr_1",
-#    "5-qubit (parallel)":    "arr_2",
+    "5-qubit (parallel)":    "arr_2",
 }
 
 PROTOCOL_COLOR = {
     "no correction":         "#666666",
     "4-qubit (sequential)":  "#0072B2",
-#    "5-qubit (parallel)":    "#D55E00",
+    "5-qubit (parallel)":    "#D55E00",
+}
+
+# Encode the noise condition via linestyle so protocol color stays free for
+# the *protocol* axis of variation. Solid = noiseless, dashed = noisy is
+# the convention most people read intuitively (noise = perturbation = broken
+# line).
+NOISE_LINESTYLE = {
+    "noiseless": "-",
+    "noisy":     "--",
 }
 
 # Logical-state palette (Wong, Nature Methods 8, 441 (2011))
@@ -483,6 +490,7 @@ def plot_per_state_breakdown(
     return fig, axes
 
 
+
 # =============================================================================
 # Plot: states-by-protocol (transpose of per_state_breakdown)
 # =============================================================================
@@ -611,142 +619,375 @@ def plot_states_by_protocol(
         fig.savefig(save_path.with_suffix(".png"), bbox_inches="tight", dpi=200)
     return fig, axes
 
-
-# =============================================================================
-# Plot 3: Haar / 6-state consistency check (2-design)
-# =============================================================================
-
-def plot_haar_consistency(
-    key_records: list[dict], haar_records: list[dict],
-    n_iter: int, T2: int,
+########################################
+#           Plot unitary noise         #
+########################################
+def plot_noise_comparison(
+    records_noiseless: list[dict],
+    records_noisy: list[dict],
+    states: Iterable[str] = ("0", "1", "+"),
+    protocols: Iterable[str] | None = None,
+    n_iter: int = 600,
+    T2: int | None = None,
     save_path: Path | str | None = None,
     skip_initial: int = 3,
     ylim: tuple[float, float] | None = None,
 ):
     """
-    Per-protocol comparison of 6-state average vs Haar Monte Carlo average.
-    For d=2, the 6 logical Pauli eigenstates form a state 2-design, so these
-    two should agree to within MC noise of the Haar sample size.
+    Side-by-side noise vs noiseless comparison.
 
-    NB: your generator uses np.random.rand for the Haar coefficients, which
-    is NOT a uniform Haar sample (it concentrates the Bloch sphere distribution
-    in the first quadrant). Even with perfect simulation the two curves will
-    not agree perfectly until the sampler is switched to complex standard
-    Gaussians (Ginibre method).
+    Layout: rows = T2 values (one row if T2 is given), cols = logical states.
+    Within a panel: color encodes protocol, linestyle encodes noise condition
+    (solid = noiseless, dashed = noisy). This separates the two axes of
+    variation visually so the eye can pick out "which protocol survives the
+    noise" without having to track six similarly-coloured curves.
+
+    Parameters
+    ----------
+    records_noiseless, records_noisy
+        Outputs of load_dataset on the two directory roots. The function
+        does not modify them and ignores any non-'key' entries.
+    states
+        Logical state labels to plot, left-to-right. Default ("0", "1", "+")
+        gives the two computational codewords plus one off-axis state.
+    protocols
+        Subset of PROTOCOLS keys to draw. Default: all of them, including
+        "no correction" as the control.
+    n_iter, T2
+        Filter on these metadata. T2=None expands T2 across rows.
+    skip_initial
+        Drop the first N samples per trace -- avoids the F=1 cliff dominating
+        the log y-axis.
+    ylim
+        Infidelity-coordinate y-limits, e.g. (1e-5, 1e-1) maps to fidelities
+        between 0.9 and 0.99999. None => matplotlib autoscale.
     """
-    key  = _group(key_records,  iter=n_iter, T2=T2, kind="key")
-    haar = _group(haar_records, iter=n_iter, T2=T2, kind="haar")
-    if not key or not haar:
-        print(f"[plot_haar_consistency] missing data for n_iter={n_iter}, T2={T2}")
-        return None, None
+    from matplotlib.lines import Line2D  # local import; only used here
 
-    n_haar = len(haar)
+    if protocols is None:
+        protocols = list(PROTOCOLS.keys())
+    protocols = list(protocols)
+    states    = list(states)
 
+    rec_n0 = [r for r in records_noiseless if r["kind"] == "key"]
+    rec_n1 = [r for r in records_noisy     if r["kind"] == "key"]
+
+    # T2 grid: union of the two datasets at this n_iter, with a warning if
+    # they're not symmetric. Silent dropping here is exactly the failure
+    # mode that produces a misleading comparison plot.
+    if T2 is None:
+        T2s_n0 = {r["T2"] for r in rec_n0 if r["iter"] == n_iter}
+        T2s_n1 = {r["T2"] for r in rec_n1 if r["iter"] == n_iter}
+        only_n0 = T2s_n0 - T2s_n1
+        only_n1 = T2s_n1 - T2s_n0
+        if only_n0 or only_n1:
+            warnings.warn(
+                f"asymmetric T2 coverage at n_iter={n_iter}: "
+                f"noiseless-only={sorted(only_n0)}, noisy-only={sorted(only_n1)}"
+            )
+        T2s = sorted(T2s_n0 | T2s_n1)
+        if not T2s:
+            print(f"[plot_noise_comparison] no data at n_iter={n_iter}")
+            return None, None
+    else:
+        T2s = [T2]
+
+    n_rows, n_cols = len(T2s), len(states)
     fig, axes = plt.subplots(
-        1, len(PROTOCOLS),
-        figsize=(5.0 * len(PROTOCOLS), 4.0),
-        sharey=True,
+        n_rows, n_cols,
+        figsize=(4.7 * n_cols, 3.6 * n_rows),
+        sharey=True, sharex="col", squeeze=False,
     )
 
-    for ax, label in zip(axes, PROTOCOLS):
-        t_ref, F6_stack = _stack_states(key, label)
-        F6 = F6_stack.mean(axis=0)
+    T1_seen = None
 
-        Fh_stack = np.array([r["protocols"][label]["F"] for r in haar])
-        for r in haar:
-            assert np.allclose(r["protocols"][label]["time"], t_ref), (
-                "haar time grid differs from key time grid"
+    for i, T2_val in enumerate(T2s):
+        for j, state in enumerate(states):
+            ax = axes[i, j]
+
+            r_n0 = _group(rec_n0, iter=n_iter, T2=T2_val, state=state)
+            r_n1 = _group(rec_n1, iter=n_iter, T2=T2_val, state=state)
+
+            if not r_n0 and not r_n1:
+                ax.text(0.5, 0.5, "(no data)", ha="center", va="center",
+                        transform=ax.transAxes, fontsize=10, color="#888")
+                ax.set_xticks([]); ax.set_yticks([])
+                continue
+
+            for matches, ls in [
+                (r_n0, NOISE_LINESTYLE["noiseless"]),
+                (r_n1, NOISE_LINESTYLE["noisy"]),
+            ]:
+                if not matches:
+                    continue
+                rec = matches[0]
+                T1_seen = rec["T1"]
+                for label in protocols:
+                    if label not in rec["protocols"]:
+                        continue
+                    p = rec["protocols"][label]
+                    t_plot, F_plot = _slice_trace(p["time"], p["F"], skip_initial)
+                    ax.plot(
+                        t_plot, _safe_infidelity(F_plot),
+                        color=PROTOCOL_COLOR[label],
+                        linestyle=ls, lw=1.8,
+                    )
+
+            title = STATE_LABELS[state]
+            if T2 is None:
+                title = rf"{title}, $T_2={T2_val}\,\mu\mathrm{{s}}$"
+            ax.set_title(title, fontsize=11)
+            ax.grid(True, which="both", alpha=0.25)
+            if i == n_rows - 1:
+                ax.set_xlabel(r"Time ($\mu$s)")
+            configure_fidelity_yaxis(
+                ax, label="Fidelity" if j == 0 else "", ylim=ylim,
             )
-        F_haar = Fh_stack.mean(axis=0)
-        sem = Fh_stack.std(axis=0, ddof=1) / np.sqrt(n_haar)
 
-        t_plot, F6_plot     = _slice_trace(t_ref, F6,     skip_initial)
-        _,      F_haar_plot = _slice_trace(t_ref, F_haar, skip_initial)
-        _,      sem_plot    = _slice_trace(t_ref, sem,    skip_initial)
+    # Build a 2-axis legend (protocol color + noise linestyle) by hand;
+    # matplotlib's automatic legend would emit one entry per drawn line
+    # and you'd get six near-duplicates per panel.
+    legend_handles = [
+        Line2D([0], [0], color=PROTOCOL_COLOR[label], lw=2, label=label)
+        for label in protocols
+    ]
+    legend_handles += [
+        Line2D([0], [0], color="black", lw=2,
+               linestyle=NOISE_LINESTYLE["noiseless"], label="noiseless"),
+        Line2D([0], [0], color="black", lw=2,
+               linestyle=NOISE_LINESTYLE["noisy"], label="noisy"),
+    ]
+    axes[0, -1].legend(handles=legend_handles, loc="best", fontsize=8)
 
-        ax.plot(t_plot, _safe_infidelity(F6_plot),     lw=2.0, label="6-state avg")
-        ax.plot(t_plot, _safe_infidelity(F_haar_plot), lw=2.0,
-                label=f"Haar avg, N={n_haar}")
-        ax.fill_between(
-            t_plot,
-            _safe_infidelity(F_haar_plot + sem_plot),
-            _safe_infidelity(F_haar_plot - sem_plot),
-            alpha=0.25, lw=0,
-        )
-        ax.set_xlabel(r"Time ($\mu$s)")
-        ax.set_title(label, fontsize=10)
-        ax.grid(True, which="both", alpha=0.25)
-        configure_fidelity_yaxis(ax, label="", ylim=ylim)
+    suptitle_parts = []
+    if T1_seen is not None:
+        suptitle_parts.append(rf"$T_1={T1_seen}\,\mu$s")
+    if T2 is not None:
+        suptitle_parts.append(rf"$T_2={T2}\,\mu$s")
+    suptitle_parts.append(f"{n_iter} iter")
+    suptitle_parts.append("noiseless (solid) vs noisy (dashed)")
+    fig.suptitle(", ".join(suptitle_parts), fontsize=12, y=1.00)
 
-    axes[0].set_ylabel("Fidelity")
-    axes[-1].legend(loc="lower right", fontsize=8)
+    fig.tight_layout()
+    if save_path is not None:
+        save_path = Path(save_path)
+        fig.savefig(save_path, bbox_inches="tight", dpi=200)
+        fig.savefig(save_path.with_suffix(".png"), bbox_inches="tight", dpi=200)
+    return fig, axes
+
+
+def plot_average_noise_comparison(
+    records_noiseless: list[dict],
+    records_noisy: list[dict],
+    states: Iterable[str] = STATE_ORDER,
+    protocols: Iterable[str] | None = None,
+    save_path: Path | str | None = None,
+    show_band: bool = False,
+    skip_initial: int = 3,
+    ylim: tuple[float, float] | None = None,
+):
+    """
+    State-averaged fidelity, noiseless vs noisy.
+
+    Grid layout matches plot_protocol_comparison (rows = n_iter, cols = T2).
+    Within each panel every protocol gets two curves -- solid for noiseless,
+    dashed for noisy -- of the fidelity averaged over `states`.
+
+    For d = 2 the six Pauli eigenstates are a 2-design (Renes et al. 2004;
+    Scott 2006), so the default 6-state average equals the Haar-average
+    state fidelity. Restricting `states` to a subset gives a diagnostic
+    curve, not a 2-design average -- the curve is still well-defined but
+    no longer interpretable as <F>_Haar.
+
+    Parameters
+    ----------
+    show_band
+        If True, shade min..max across `states` for *each* (protocol,
+        noise) combination. Default off because two stacked bands per
+        protocol get visually noisy quickly. Turn on for diagnostic plots
+        where you want to see state-dependence directly.
+    skip_initial
+        Drop the first N samples per trace -- avoids the F=1 cliff at
+        t=0 from dominating the log y-axis.
+    ylim
+        Infidelity-coordinate limits, same convention as the other plots.
+    """
+    from matplotlib.lines import Line2D
+
+    if protocols is None:
+        protocols = list(PROTOCOLS.keys())
+    protocols = list(protocols)
+    state_filter = set(states)
+
+    rec_n0 = [r for r in records_noiseless
+              if r["kind"] == "key" and r["state"] in state_filter]
+    rec_n1 = [r for r in records_noisy
+              if r["kind"] == "key" and r["state"] in state_filter]
+
+    # Union grid so panels appear even when one dataset is missing a
+    # configuration. Each panel decides its own coverage below.
+    iters = sorted({r["iter"] for r in rec_n0} | {r["iter"] for r in rec_n1})
+    T2s   = sorted({r["T2"]   for r in rec_n0} | {r["T2"]   for r in rec_n1})
+
+    if not iters or not T2s:
+        print("[plot_average_noise_comparison] no data")
+        return None, None
+
+    fig, axes = plt.subplots(
+        len(iters), len(T2s),
+        figsize=(5.0 * len(T2s), 3.6 * len(iters)),
+        sharey=True, squeeze=False,
+    )
+
+    T1_seen = None
+
+    for i, n_iter in enumerate(iters):
+        for j, T2 in enumerate(T2s):
+            ax = axes[i, j]
+
+            panel_n0 = _group(rec_n0, iter=n_iter, T2=T2)
+            panel_n1 = _group(rec_n1, iter=n_iter, T2=T2)
+
+            if not panel_n0 and not panel_n1:
+                ax.set_visible(False)
+                continue
+
+            # Sanity-check that the requested 2-design is actually complete
+            # in each subpanel; if not, the curve is still drawn but the
+            # user gets warned that it's no longer the Haar average.
+            for panel, condition in [(panel_n0, "noiseless"),
+                                     (panel_n1, "noisy")]:
+                if panel and len(panel) != len(state_filter):
+                    have = sorted({r["state"] for r in panel})
+                    warnings.warn(
+                        f"({n_iter} iter, T2={T2}, {condition}): "
+                        f"have {have}, requested {sorted(state_filter)} -- "
+                        f"average is no longer a 2-design average."
+                    )
+
+            for panel, ls in [(panel_n0, NOISE_LINESTYLE["noiseless"]),
+                              (panel_n1, NOISE_LINESTYLE["noisy"])]:
+                if not panel:
+                    continue
+                T1_seen = panel[0]["T1"]
+                for label in protocols:
+                    try:
+                        t, F_stack = _stack_states(panel, label)
+                    except (KeyError, ValueError) as e:
+                        warnings.warn(
+                            f"({n_iter} iter, T2={T2}, "
+                            f"{'noisy' if ls == '--' else 'noiseless'}, "
+                            f"{label}): {e}"
+                        )
+                        continue
+                    t_plot, F_avg = _slice_trace(
+                        t, F_stack.mean(axis=0), skip_initial
+                    )
+                    ax.plot(
+                        t_plot, _safe_infidelity(F_avg),
+                        color=PROTOCOL_COLOR[label],
+                        linestyle=ls, lw=2.0,
+                    )
+                    if show_band:
+                        _, F_hi = _slice_trace(t, F_stack.max(axis=0), skip_initial)
+                        _, F_lo = _slice_trace(t, F_stack.min(axis=0), skip_initial)
+                        ax.fill_between(
+                            t_plot,
+                            _safe_infidelity(F_hi),
+                            _safe_infidelity(F_lo),
+                            color=PROTOCOL_COLOR[label],
+                            alpha=0.10, lw=0,
+                        )
+
+            T1_title = T1_seen if T1_seen is not None else "?"
+            ax.set_title(
+                f"{n_iter} iter, "
+                rf"$T_1={T1_title}\,\mu\mathrm{{s}}$, $T_2={T2}\,\mu\mathrm{{s}}$",
+                fontsize=10,
+            )
+            ax.grid(True, which="both", alpha=0.25)
+            if i == len(iters) - 1:
+                ax.set_xlabel(r"Time ($\mu$s)")
+            configure_fidelity_yaxis(
+                ax,
+                label=(rf"$\langle F\rangle_{{{len(state_filter)}}}$"
+                       if j == 0 else ""),
+                ylim=ylim,
+            )
+
+    legend_handles = [
+        Line2D([0], [0], color=PROTOCOL_COLOR[label], lw=2, label=label)
+        for label in protocols
+    ]
+    legend_handles += [
+        Line2D([0], [0], color="black", lw=2,
+               linestyle=NOISE_LINESTYLE["noiseless"], label="noiseless"),
+        Line2D([0], [0], color="black", lw=2,
+               linestyle=NOISE_LINESTYLE["noisy"], label="noisy"),
+    ]
+    axes[0, -1].legend(handles=legend_handles, loc="lower right", fontsize=8)
+
     fig.suptitle(
-        rf"2-design consistency check: $T_2 = {T2}\,\mu$s, {n_iter} iter",
-        fontsize=11, y=1.02,
+        f"Phase-flip code: {len(state_filter)}-state averaged logical "
+        f"fidelity, noiseless (solid) vs noisy (dashed)",
+        fontsize=12, y=1.00,
     )
     fig.tight_layout()
     if save_path is not None:
+        save_path = Path(save_path)
         fig.savefig(save_path, bbox_inches="tight", dpi=200)
+        fig.savefig(save_path.with_suffix(".png"), bbox_inches="tight", dpi=200)
     return fig, axes
-
 
 # =============================================================================
 # Driver
 # =============================================================================
 
-def main(root: Path = Path("data"), out_dir: Path = Path("plots/bad")):
+def main(root: Path = Path("data"), out_dir: Path = Path("plots")):
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # 1. Integrity check first --- prints which files are corrupted
-    validate_files(root / "bad_freq_allocation_results")
-    # validate_files(root / "haar_random_states")
+    # # 1. Integrity check on both source trees
+    # validate_files(root / "key_initial_states")
+    # validate_files(root / "noisy_initial_states")
 
-    # 2. Load (skips corrupted files automatically with warnings)
-    print("\n=== Loading key states ===")
-    key = load_dataset(root / "bad_freq_allocation_results", verbose=True)
-    print(f"Loaded {len(key)} key records")
+    # 2. Load each dataset into its own list. They share filename schemas,
+    #    so what distinguishes them is just which directory we pointed at.
+    print("\n=== Loading noiseless key states ===")
+    key_noiseless = load_dataset(root / "key_initial_states", verbose=True)
+    print(f"Loaded {len(key_noiseless)} noiseless records")
 
-    # print("\n=== Loading Haar states ===")
-    # haar = load_dataset(root / "haar_random_states", verbose=True)
-    # print(f"Loaded {len(haar)} Haar records")
+    print("\n=== Loading noisy key states ===")
+    key_noisy = load_dataset(root / "noisy_initial_states", verbose=True)
+    print(f"Loaded {len(key_noisy)} noisy records")
 
-    # 3. Main result: protocol comparison
-    if key:
-        plot_protocol_comparison(
-            key, save_path=out_dir / "protocol_comparison.pdf", ylim=[1e-3, 1]
-        )
+    if not key_noiseless and not key_noisy:
+        print("No data found in either directory; nothing to plot.")
+        return
 
-        # 4. Per-state breakdown for every (iter, T2) combination
-        iters = sorted({r["iter"] for r in key})
-        T2s   = sorted({r["T2"]   for r in key})
-        for n_iter in iters:
-            for T2 in T2s:
-                plot_per_state_breakdown(
-                    key, n_iter=n_iter, T2=T2,
-                    save_path=out_dir / f"per_state_{n_iter}iter_T2_{T2}.pdf",
-                    ylim=[1e-3, 1]
-                )
+    # 3. Sweep (n_iter, T2) over the union of both datasets so we don't
+    #    silently drop a configuration that exists in only one run.
+    all_iters = sorted({r["iter"] for r in key_noiseless} |
+                       {r["iter"] for r in key_noisy})
+    all_T2s   = sorted({r["T2"]   for r in key_noiseless} |
+                       {r["T2"]   for r in key_noisy})
 
-        # 4b. States-by-protocol: |0>_L, |1>_L, |+>_L compared across schemes
-        for n_iter in iters:
-            for T2 in T2s:
-                plot_states_by_protocol(
-                    key, states=("0", "1", "+", "i"),
-                    n_iter=n_iter, T2=T2,
-                    save_path=out_dir / f"states_by_protocol_{n_iter}iter_T2_{T2}.pdf",
-                    ylim=[1e-3, 1]
-                )
+    for n_iter in all_iters:
+        for T2 in all_T2s:
+            plot_noise_comparison(
+                key_noiseless, key_noisy,
+                states=("0", "1", "+"),
+                n_iter=n_iter, T2=T2,
+                save_path=out_dir / f"noise_comparison_{n_iter}iter_T2_{T2}.pdf",
+                ylim=[1e-3, 1],
+            )
 
-    # # 5. Haar/6-state consistency (one plot per (iter, T2))
-    # if key and haar:
-    #     iters = sorted({r["iter"] for r in haar})
-    #     T2s   = sorted({r["T2"]   for r in haar})
-    #     for n_iter in iters:
-    #         for T2 in T2s:
-    #             plot_haar_consistency(
-    #                 key, haar, n_iter=n_iter, T2=T2,
-    #                 save_path=out_dir / f"haar_check_{n_iter}iter_T2_{T2}.pdf",
-    #             )
+    # State-averaged noise comparison: one figure, all (iter, T2) panels.
+    plot_average_noise_comparison(
+        key_noiseless, key_noisy,
+        save_path=out_dir / "average_noise_comparison.pdf",
+        ylim=[1e-3, 1],
+    )
+
 
     plt.show()
 
